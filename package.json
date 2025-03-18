@@ -1,0 +1,32 @@
+{
+  "name": "w-orm-lowdb",
+  "version": "1.0.0",
+  "main": "dist/w-orm-lowdb.umd.js",
+  "dependencies": {
+    "lodash-es": "^4.17.21",
+    "lowdb": "^7.0.1",
+    "mingo": "^6.5.3",
+    "wsemi": "^1.7.70"
+  },
+  "devDependencies": {
+    "w-package-tools": "^1.0.82"
+  },
+  "scripts": {
+    "test": "mocha --parallel --timeout 60000 --experimental-modules",
+    "deploy": "gh-pages -d docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuda-lyu/w-orm-lowdb.git"
+  },
+  "keywords": [
+    "package",
+    "tool",
+    "operator",
+    "lowdb",
+    "ORM",
+    "nodejs"
+  ],
+  "author": "yuda-lyu(semisphere)",
+  "license": "MIT"
+}

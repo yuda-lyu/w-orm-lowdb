@@ -1,0 +1,14 @@
+{
+  "worm:users": [
+    {
+      "id": "id-peter",
+      "name": "peter(modify)",
+      "value": 123
+    },
+    {
+      "id": "id-rosemary",
+      "name": "rosemary(modify)",
+      "value": 123.456
+    }
+  ]
+}
