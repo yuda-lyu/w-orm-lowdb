@@ -58,10 +58,10 @@ function WOrmLowdb(opt = {}) {
     //lowdb
     let lowdb = new Low(adapter, {})
 
-    //default
-    if (!haskey(lowdb.data, key)) {
-        lowdb.data[key] = []
-    }
+    // //default, 此處偵測會失效, 因操作函數內會通過lowdb.read()初始化, 預設創建空陣列會被取代
+    // if (!haskey(lowdb.data, key)) {
+    //     lowdb.data[key] = []
+    // }
 
     //ee
     let ee = new events.EventEmitter()
@@ -82,6 +82,11 @@ function WOrmLowdb(opt = {}) {
 
             //read
             await lowdb.read()
+
+            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+            if (!haskey(lowdb.data, key)) {
+                lowdb.data[key] = []
+            }
 
             //filter
             if (iseobj(find)) {
@@ -148,6 +153,11 @@ function WOrmLowdb(opt = {}) {
 
             //read
             await lowdb.read()
+
+            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+            if (!haskey(lowdb.data, key)) {
+                lowdb.data[key] = []
+            }
 
             //kp
             let kp = {}
@@ -246,6 +256,11 @@ function WOrmLowdb(opt = {}) {
 
             //read
             await lowdb.read()
+
+            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+            if (!haskey(lowdb.data, key)) {
+                lowdb.data[key] = []
+            }
 
             //kp
             let kp = {}
@@ -357,6 +372,11 @@ function WOrmLowdb(opt = {}) {
             //read
             await lowdb.read()
 
+            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+            if (!haskey(lowdb.data, key)) {
+                lowdb.data[key] = []
+            }
+
             //kp
             let kp = {}
             each(lowdb.data[key], (v, k) => {
@@ -466,6 +486,11 @@ function WOrmLowdb(opt = {}) {
 
             //read
             await lowdb.read()
+
+            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+            if (!haskey(lowdb.data, key)) {
+                lowdb.data[key] = []
+            }
 
             //filter
             let nAll = size(lowdb.data[key])
