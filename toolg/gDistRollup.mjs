@@ -13,10 +13,12 @@ rollupFiles({
     nameDistType: 'kebabCase',
     globals: {
         'events': 'events',
+        'lowdb': 'lowdb',
         'mingo': 'mingo',
     },
     external: [
         'events',
+        'lowdb',
         'mingo',
     ],
 })

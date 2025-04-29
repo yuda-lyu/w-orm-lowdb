@@ -1,7 +1,7 @@
 import events from 'events'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
-import { Query } from 'mingo'
+import { Query } from 'mingo' //須指定安裝6.5.6, 若6.6.0無法匯入Query
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'
@@ -275,11 +275,8 @@ function WOrmLowdb(opt = {}) {
                 //rest
                 let rest = null
 
-                //id
-                let id = get(v, 'id', '')
-
-                //查找資料表內v.id為_v
-                let r = get(kp, id, null)
+                //查找資料表內v.id
+                let r = get(kp, v.id, null)
 
                 //check
                 if (iseobj(r)) {

@@ -19,7 +19,11 @@ npm i w-orm-lowdb
 #### Example
 > **Link:** [[dev source code](https://github.com/yuda-lyu/w-orm-lowdblob/master/g-basic.mjs)]
 ```alias
-import wo from 'w-orm-lowdb'
+import WOrm from './src/WOrmLowdb.mjs'
+//import WOrm from './dist/w-orm-lowdb.umd.js'
+// import w from 'wsemi'
+
+// w.fsDeleteFile('./db.json')
 
 let opt = {
     url: './db.json',
@@ -30,15 +34,18 @@ let opt = {
 let rs = [
     {
         id: 'id-peter',
-        name: 'peter'
+        name: 'peter',
+        value: 123,
     },
     {
         id: 'id-rosemary',
-        name: 'rosemary'
+        name: 'rosemary',
+        value: 123.456,
     },
     {
         id: '',
-        name: 'kettle'
+        name: 'kettle',
+        value: 456,
     },
 ]
 
@@ -59,104 +66,119 @@ let rsm = [
 
 async function test() {
 
-
-    //w
-    let w = wo(opt)
-
+    //wo
+    let wo = WOrm(opt)
 
     //on
-    w.on('change', function(mode, data, res) {
+    wo.on('change', function(mode, data, res) {
         console.log('change', mode)
     })
 
-
     //delAll
-    await w.delAll()
+    await wo.delAll()
         .then(function(msg) {
             console.log('delAll then', msg)
         })
         .catch(function(msg) {
             console.log('delAll catch', msg)
         })
-    // => delAll then { n: 2, nDeleted: 2, ok: 1 }
-
 
     //insert
-    await w.insert(rs)
+    await wo.insert(rs)
         .then(function(msg) {
             console.log('insert then', msg)
         })
         .catch(function(msg) {
             console.log('insert catch', msg)
         })
-    // => insert then { n: 3, nInserted: 3, ok: 1 }
-
 
     //save
-    await w.save(rsm, { autoInsert: false })
+    await wo.save(rsm, { autoInsert: false })
         .then(function(msg) {
             console.log('save then', msg)
         })
         .catch(function(msg) {
             console.log('save catch', msg)
         })
-    // => save then [ 
-    //                { n: 1, nModified: 1, ok: 1 },
-    //                { n: 1, nModified: 1, ok: 1 }, 
-    //                { n: 0, nModified: 0, ok: 1 }, //autoInsert=false
-    //                { n: 1, nInserted: 1, ok: 1 }  //autoInsert=true
-    //              ]
-
 
     //select all
-    let ss = await w.select()
+    let ss = await wo.select()
     console.log('select all', ss)
-    // => select all [ 
-    //                 { id: 'id-peter', name: 'peter(modify)', value: 123 },
-    //                 { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 },
-    //                 { id: '{random id}', name: 'kettle', value: 456 },
-    //                 { id: '{random id}', name: 'kettle(modify)' } //autoInsert=true
-    //               ]
-
 
     //select
-    let so = await w.select({ id: 'id-rosemary' })
-    // => select [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
-
+    let so = await wo.select({ id: 'id-rosemary' })
+    console.log('select', so)
 
     //select by $and, $gt, $lt
-    let spa = await w.select({ '$and': [{ value: { '$gt': 123 } }, { value: { '$lt': 200 } }] })
-    // => select [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
-
+    let spa = await wo.select({ '$and': [{ value: { '$gt': 123 } }, { value: { '$lt': 200 } }] })
+    console.log('select by $and, $gt, $lt', spa)
 
     //select by $or, $gte, $lte
-    let spb = await w.select({ '$or': [{ value: { '$lte': -1 } }, { value: { '$gte': 200 } }] })
-    // => select [ { id: '{random id}', name: 'kettle', value: 456 } ]
-
+    let spb = await wo.select({ '$or': [{ value: { '$lte': -1 } }, { value: { '$gte': 200 } }] })
+    console.log('select by $or, $gte, $lte', spb)
 
     //select by $or, $and, $ne, $in, $nin
-    let spc = await w.select({ '$or': [{ '$and': [{ value: { '$ne': 123 } }, { value: { '$in': [123, 321, 123.456, 456] } }, { value: { '$nin': [456, 654] } }] }, { '$or': [{ value: { '$lte': -1 } }, { value: { '$gte': 400 } }] }] })
+    let spc = await wo.select({ '$or': [{ '$and': [{ value: { '$ne': 123 } }, { value: { '$in': [123, 321, 123.456, 456] } }, { value: { '$nin': [456, 654] } }] }, { '$or': [{ value: { '$lte': -1 } }, { value: { '$gte': 400 } }] }] })
     console.log('select by $or, $and, $ne, $in, $nin', spc)
-    // => select [
-    //             { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 },
-    //             { id: '{random id}', name: 'kettle', value: 456 }
-    //           ]
 
+    // //select by regex //mingo不支援regex
+    // let sr = await wo.select({ name: { $regex: 'PeT', $options: '$i' } })
+    // console.log('selectReg', sr)
 
     //del
     let d = ss.filter(function(v) {
         return v.name === 'kettle'
     })
-    w.del(d)
+    await wo.del(d)
         .then(function(msg) {
             console.log('del then', msg)
         })
         .catch(function(msg) {
             console.log('del catch', msg)
         })
-    // => del then [ { n: 1, nDeleted: 1, ok: 1 } ]
-    
 
 }
 test()
+// change delAll
+// delAll then { n: 2, nDeleted: 2, ok: 1 }
+// change insert
+// insert then { n: 3, nInserted: 3, ok: 1 }
+// change save
+// save then [
+//   { n: 1, nModified: 1, ok: 1 },
+//   { n: 1, nModified: 1, ok: 1 },
+//   { n: 0, nModified: 0, ok: 1 }
+// ]
+// select all [
+//   { id: 'id-peter', name: 'peter(modify)', value: 123 },
+//   { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 },
+//   {
+//     id: {random id},
+//     name: 'kettle',
+//     value: 456
+//   }
+// ]
+// select [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
+// select by $and, $gt, $lt [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
+// select by $or, $gte, $lte [
+//   {
+//     id: {random id},
+//     name: 'kettle',
+//     value: 456
+//   }
+// ]
+// select by $or, $and, $ne, $in, $nin [
+//   {
+//     id: 'id-rosemary',
+//     name: 'rosemary(modify)',
+//     value: 123.456
+//   },
+//   {
+//     id: {random id},
+//     name: 'kettle',
+//     value: 456
+//   }
+// ]
+// change del
+// del then [ { n: 1, nDeleted: 1, ok: 1 } ]
 ```
