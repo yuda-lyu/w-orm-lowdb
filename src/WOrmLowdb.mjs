@@ -1,3 +1,4 @@
+import path from 'path'
 import events from 'events'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
@@ -18,6 +19,10 @@ import isearr from 'wsemi/src/isearr.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import arrPullAt from 'wsemi/src/arrPullAt.mjs'
 import waitFun from 'wsemi/src/waitFun.mjs'
+
+
+//kpGlock
+let kpGlock = {}
 
 
 /**
@@ -67,9 +72,14 @@ function WOrmLowdb(opt = {}) {
     //ee
     let ee = new events.EventEmitter()
 
-    //全域鎖, 一次僅能執行一種操作函數, 使各類操作url(db.json)時能為獨占模式
+    //gkey, 基於url也就是以檔案路徑為準, 同檔案路徑須使用全域鎖
+    let gkey = path.resolve(url)
+
+    //全域鎖初始化, 一次僅能執行一種操作函數, 使各類操作url(db.json)時能為獨占模式
     //select理論上是不用鎖, 但因為操作上db.jon.tmp更名回db.json時似乎非rename而是串流寫入, 導致有機會撈到不完整json數據進而出錯, 故還是得要上鎖以策安全
-    let glock = false
+    if (!haskey(kpGlock, gkey)) {
+        kpGlock[gkey] = false
+    }
 
     /**
      * 查詢數據
@@ -121,15 +131,15 @@ function WOrmLowdb(opt = {}) {
         return res
     }
     async function select(find = {}) {
-        if (glock) {
+        if (kpGlock[gkey]) {
             await waitFun(() => {
-                return !glock
+                return !kpGlock[gkey]
             })
         }
-        glock = true
+        kpGlock[gkey] = true
         return await selectCore(find)
             .finally(() => {
-                glock = false
+                kpGlock[gkey] = false
             })
     }
 
@@ -231,15 +241,15 @@ function WOrmLowdb(opt = {}) {
         return res
     }
     async function insert(data) {
-        if (glock) {
+        if (kpGlock[gkey]) {
             await waitFun(() => {
-                return !glock
+                return !kpGlock[gkey]
             })
         }
-        glock = true
+        kpGlock[gkey] = true
         return await insertCore(data)
             .finally(() => {
-                glock = false
+                kpGlock[gkey] = false
             })
     }
 
@@ -368,15 +378,15 @@ function WOrmLowdb(opt = {}) {
         return res
     }
     async function save(data, option = {}) {
-        if (glock) {
+        if (kpGlock[gkey]) {
             await waitFun(() => {
-                return !glock
+                return !kpGlock[gkey]
             })
         }
-        glock = true
+        kpGlock[gkey] = true
         return await saveCore(data, option)
             .finally(() => {
-                glock = false
+                kpGlock[gkey] = false
             })
     }
 
@@ -508,15 +518,15 @@ function WOrmLowdb(opt = {}) {
         return res
     }
     async function del(data) {
-        if (glock) {
+        if (kpGlock[gkey]) {
             await waitFun(() => {
-                return !glock
+                return !kpGlock[gkey]
             })
         }
-        glock = true
+        kpGlock[gkey] = true
         return await delCore(data)
             .finally(() => {
-                glock = false
+                kpGlock[gkey] = false
             })
     }
 
@@ -633,15 +643,15 @@ function WOrmLowdb(opt = {}) {
         return res
     }
     async function delAll(find = {}) {
-        if (glock) {
+        if (kpGlock[gkey]) {
             await waitFun(() => {
-                return !glock
+                return !kpGlock[gkey]
             })
         }
-        glock = true
+        kpGlock[gkey] = true
         return await delAllCore(find)
             .finally(() => {
-                glock = false
+                kpGlock[gkey] = false
             })
     }
 
