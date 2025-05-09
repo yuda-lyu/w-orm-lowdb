@@ -48,7 +48,8 @@
             <pre class="prettyprint source linenums"><code>import events from 'events'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
-import { Query } from 'mingo'
+import { Query } from 'mingo' //須指定安裝6.5.6, 若6.6.0無法匯入Query
+import { Mutex } from 'async-mutex'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'
@@ -104,6 +105,9 @@ function WOrmLowdb(opt = {}) {
 
     //lowdb
     let lowdb = new Low(adapter, {})
+
+    //mutex
+    let mutex = new Mutex()
 
     // //default, 此處偵測會失效, 因操作函數內會通過lowdb.read()初始化, 預設創建空陣列會被取代
     // if (!haskey(lowdb.data, key)) {
@@ -171,94 +175,96 @@ function WOrmLowdb(opt = {}) {
      * @returns {Promise} 回傳Promise，resolve回傳插入結果，reject回傳錯誤訊息
      */
     async function insert(data) {
-        let isErr = false
-
-        //check
-        if (!iseobj(data) &amp;&amp; !isearr(data)) {
-            return Promise.reject(`data is not an effective object or array`)
-        }
-
-        //cloneDeep, 與外部數據脫勾
-        data = cloneDeep(data)
-
-        //res
-        let res = null
-        try {
+        return await mutex.runExclusive(async () => {
+            let isErr = false
 
             //check
-            if (!isarr(data)) {
-                data = [data]
+            if (!iseobj(data) &amp;&amp; !isearr(data)) {
+                return Promise.reject(`data is not an effective object or array`)
             }
 
-            //check id
-            data = map(data, function(v) {
-                if (!isestr(v.id)) {
-                    v.id = genID()
-                }
-                return v
-            })
-
-            //read
-            await lowdb.read()
-
-            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
-            if (!haskey(lowdb.data, key)) {
-                lowdb.data[key] = []
-            }
-
-            //kp
-            let kp = {}
-            each(lowdb.data[key], (v, k) => {
-                kp[v.id] = { k, v }
-            })
-
-            //each
-            let nAll = size(data)
-            let nPush = 0
-            let b = false
-            each(data, (v) => {
-
-                //check
-                if (!haskey(kp, v.id)) {
-                    //未存在v.id
-
-                    //push
-                    lowdb.data[key].push(v)
-
-                    nPush++
-                    b = true
-                }
-                else {
-                    //已存在v.id則不push
-                }
-
-            })
-
-            //write
-            if (b) {
-                await lowdb.write()
-            }
+            //cloneDeep, 與外部數據脫勾
+            data = cloneDeep(data)
 
             //res
-            res = {
-                n: nAll,
-                nInserted: nPush,
-                ok: 1,
+            let res = null
+            try {
+
+                //check
+                if (!isarr(data)) {
+                    data = [data]
+                }
+
+                //check id
+                data = map(data, function(v) {
+                    if (!isestr(v.id)) {
+                        v.id = genID()
+                    }
+                    return v
+                })
+
+                //read
+                await lowdb.read()
+
+                //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+                if (!haskey(lowdb.data, key)) {
+                    lowdb.data[key] = []
+                }
+
+                //kp
+                let kp = {}
+                each(lowdb.data[key], (v, k) => {
+                    kp[v.id] = { k, v }
+                })
+
+                //each
+                let nAll = size(data)
+                let nPush = 0
+                let b = false
+                each(data, (v) => {
+
+                    //check
+                    if (!haskey(kp, v.id)) {
+                        //未存在v.id
+
+                        //push
+                        lowdb.data[key].push(v)
+
+                        nPush++
+                        b = true
+                    }
+                    else {
+                        //已存在v.id則不push
+                    }
+
+                })
+
+                //write
+                if (b) {
+                    await lowdb.write()
+                }
+
+                //res
+                res = {
+                    n: nAll,
+                    nInserted: nPush,
+                    ok: 1,
+                }
+
+                //emit
+                ee.emit('change', 'insert', data, res)
+
+            }
+            catch (err) {
+                isErr = true
+                res = err
             }
 
-            //emit
-            ee.emit('change', 'insert', data, res)
-
-        }
-        catch (err) {
-            isErr = true
-            res = err
-        }
-
-        if (isErr) {
-            return Promise.reject(res)
-        }
-        return res
+            if (isErr) {
+                return Promise.reject(res)
+            }
+            return res
+        })
     }
 
     /**
@@ -271,122 +277,121 @@ function WOrmLowdb(opt = {}) {
      * @returns {Promise} 回傳Promise，resolve回傳儲存結果，reject回傳錯誤訊息
      */
     async function save(data, option = {}) {
-        let isErr = false
-
-        //check
-        if (!iseobj(data) &amp;&amp; !isearr(data)) {
-            return Promise.reject(`data is not an effective object or array`)
-        }
-
-        //cloneDeep, 與外部數據脫勾
-        data = cloneDeep(data)
-
-        //autoInsert
-        let autoInsert = get(option, 'autoInsert', true)
-
-        //res
-        let res = null
-        try {
+        return await mutex.runExclusive(async () => {
+            let isErr = false
 
             //check
-            if (!isarr(data)) {
-                data = [data]
+            if (!iseobj(data) &amp;&amp; !isearr(data)) {
+                return Promise.reject(`data is not an effective object or array`)
             }
 
-            //check id
-            data = map(data, function(v) {
-                if (!isestr(v.id)) {
-                    v.id = genID()
-                }
-                return v
-            })
+            //cloneDeep, 與外部數據脫勾
+            data = cloneDeep(data)
 
-            //read
-            await lowdb.read()
+            //autoInsert
+            let autoInsert = get(option, 'autoInsert', true)
 
-            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
-            if (!haskey(lowdb.data, key)) {
-                lowdb.data[key] = []
-            }
-
-            //kp
-            let kp = {}
-            each(lowdb.data[key], (v, k) => {
-                kp[v.id] = { k, v }
-            })
-
-            //pmSeries
-            let b = false
-            res = await pmSeries(data, async(v) => {
-
-                //rest
-                let rest = null
-
-                //id
-                let id = get(v, 'id', '')
-
-                //查找資料表內v.id為_v
-                let r = get(kp, id, null)
+            //res
+            let res = null
+            try {
 
                 //check
-                if (iseobj(r)) {
-                    //已存在v.id
-                    if (isEqual(v, r.v)) {
-                        //內容相同不更新
+                if (!isarr(data)) {
+                    data = [data]
+                }
+
+                //check id
+                data = map(data, function(v) {
+                    if (!isestr(v.id)) {
+                        v.id = genID()
+                    }
+                    return v
+                })
+
+                //read
+                await lowdb.read()
+
+                //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+                if (!haskey(lowdb.data, key)) {
+                    lowdb.data[key] = []
+                }
+
+                //kp
+                let kp = {}
+                each(lowdb.data[key], (v, k) => {
+                    kp[v.id] = { k, v }
+                })
+
+                //pmSeries
+                let b = false
+                res = await pmSeries(data, async(v) => {
+
+                    //rest
+                    let rest = null
+
+                    //查找資料表內v.id
+                    let r = get(kp, v.id, null)
+
+                    //check
+                    if (iseobj(r)) {
+                        //已存在v.id
+                        if (isEqual(v, r.v)) {
+                            //內容相同不更新
+                        }
+                        else {
+                            //內容不同須更新
+
+                            //merge
+                            lowdb.data[key][r.k] = merge(lowdb.data[key][r.k], v)
+
+                            rest = { update: true }
+                            b = true
+                        }
+                    }
+
+                    //rest
+                    if (iseobj(rest)) {
+                        rest = {
+                            n: 1,
+                            nModified: 1,
+                            ok: 1,
+                        }
                     }
                     else {
-                        //內容不同須更新
-
-                        //merge
-                        lowdb.data[key][r.k] = merge(lowdb.data[key][r.k], v)
-
-                        rest = { update: true }
-                        b = true
+                        rest = {
+                            n: 0,
+                            nModified: 0,
+                            ok: 1,
+                        }
                     }
-                }
 
-                //rest
-                if (iseobj(rest)) {
-                    rest = {
-                        n: 1,
-                        nModified: 1,
-                        ok: 1,
+                    //autoInsert
+                    if (autoInsert &amp;&amp; rest.n === 0) {
+                        rest = await insert(v)
                     }
-                }
-                else {
-                    rest = {
-                        n: 0,
-                        nModified: 0,
-                        ok: 1,
-                    }
-                }
 
-                //autoInsert
-                if (autoInsert &amp;&amp; rest.n === 0) {
-                    rest = await insert(v)
+                    return rest
+                })
+
+                //write
+                if (b) {
+                    await lowdb.write()
                 }
 
-                return rest
-            })
+                //emit
+                ee.emit('change', 'save', data, res)
 
-            //write
-            if (b) {
-                await lowdb.write()
+            }
+            catch (err) {
+                isErr = true
+                res = err
             }
 
-            //emit
-            ee.emit('change', 'save', data, res)
-
-        }
-        catch (err) {
-            isErr = true
-            res = err
-        }
-
-        if (isErr) {
-            return Promise.reject(res)
-        }
-        return res
+            if (isErr) {
+                return Promise.reject(res)
+            }
+            return res
+        })
     }
 
     /**
@@ -397,124 +402,126 @@ function WOrmLowdb(opt = {}) {
      * @returns {Promise} 回傳Promise，resolve回傳刪除結果，reject回傳錯誤訊息
      */
     async function del(data) {
-        let isErr = false
-
-        //check
-        if (!iseobj(data) &amp;&amp; !isearr(data)) {
-            return Promise.reject(`data is not an effective object or array`)
-        }
-
-        //cloneDeep, 與外部數據脫勾
-        data = cloneDeep(data)
-
-        //res
-        let res = null
-        try {
+        return await mutex.runExclusive(async () => {
+            let isErr = false
 
             //check
-            if (!isarr(data)) {
-                data = [data]
+            if (!iseobj(data) &amp;&amp; !isearr(data)) {
+                return Promise.reject(`data is not an effective object or array`)
             }
 
-            //read
-            await lowdb.read()
+            //cloneDeep, 與外部數據脫勾
+            data = cloneDeep(data)
 
-            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
-            if (!haskey(lowdb.data, key)) {
-                lowdb.data[key] = []
-            }
-
-            //kp
-            let kp = {}
-            each(lowdb.data[key], (v, k) => {
-                kp[v.id] = { k, v }
-            })
-
-            //pmSeries
-            let ks = []
-            let b = false
-            res = await pmSeries(data, async(v) => {
-
-                //rest
-                let rest = null
-
-                //id
-                let id = get(v, 'id', '')
+            //res
+            let res = null
+            try {
 
                 //check
-                if (isestr(id)) {
+                if (!isarr(data)) {
+                    data = [data]
+                }
 
-                    //查找資料表內v.id為_v
-                    let r = get(kp, id, null)
+                //read
+                await lowdb.read()
+
+                //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+                if (!haskey(lowdb.data, key)) {
+                    lowdb.data[key] = []
+                }
+
+                //kp
+                let kp = {}
+                each(lowdb.data[key], (v, k) => {
+                    kp[v.id] = { k, v }
+                })
+
+                //pmSeries
+                let ks = []
+                let b = false
+                res = await pmSeries(data, async(v) => {
+
+                    //rest
+                    let rest = null
+
+                    //id
+                    let id = get(v, 'id', '')
 
                     //check
-                    if (iseobj(r)) {
-                        //已存在v.id則須刪除
+                    if (isestr(id)) {
 
-                        //push
-                        ks.push(r.k)
+                        //查找資料表內v.id為_v
+                        let r = get(kp, id, null)
 
-                        b = true
+                        //check
+                        if (iseobj(r)) {
+                            //已存在v.id則須刪除
 
-                        //rest
-                        rest = {
-                            n: 1,
-                            nDeleted: 1,
-                            ok: 1,
+                            //push
+                            ks.push(r.k)
+
+                            b = true
+
+                            //rest
+                            rest = {
+                                n: 1,
+                                nDeleted: 1,
+                                ok: 1,
+                            }
+
+                        }
+                        else {
+                            //不存在v.id則不刪除
+
+                            //rest
+                            rest = {
+                                n: 1,
+                                nDeleted: 0,
+                                ok: 1,
+                            }
+
                         }
 
                     }
                     else {
-                        //不存在v.id則不刪除
+                        //未給v.id則不刪除
 
                         //rest
                         rest = {
                             n: 1,
                             nDeleted: 0,
-                            ok: 1,
+                            ok: 0, //未給v.id視為有問題數據, 故ok給0
                         }
 
                     }
 
-                }
-                else {
-                    //未給v.id則不刪除
+                    return rest
+                })
 
-                    //rest
-                    rest = {
-                        n: 1,
-                        nDeleted: 0,
-                        ok: 0, //未給v.id視為有問題數據, 故ok給0
-                    }
-
+                //update
+                if (b) {
+                    lowdb.data[key] = arrPullAt(lowdb.data[key], ks)
                 }
 
-                return rest
-            })
+                //write
+                if (b) {
+                    await lowdb.write()
+                }
 
-            //update
-            if (b) {
-                lowdb.data[key] = arrPullAt(lowdb.data[key], ks)
+                //emit
+                ee.emit('change', 'del', data, res)
+
+            }
+            catch (err) {
+                isErr = true
+                res = err
             }
 
-            //write
-            if (b) {
-                await lowdb.write()
+            if (isErr) {
+                return Promise.reject(res)
             }
-
-            //emit
-            ee.emit('change', 'del', data, res)
-
-        }
-        catch (err) {
-            isErr = true
-            res = err
-        }
-
-        if (isErr) {
-            return Promise.reject(res)
-        }
-        return res
+            return res
+        })
     }
 
     /**
@@ -525,109 +532,111 @@ function WOrmLowdb(opt = {}) {
      * @returns {Promise} 回傳Promise，resolve回傳刪除結果，reject回傳錯誤訊息
      */
     async function delAll(find = {}) {
-        let isErr = false
+        return await mutex.runExclusive(async () => {
+            let isErr = false
 
-        //res
-        let res = null
-        try {
+            //res
+            let res = null
+            try {
 
-            //read
-            await lowdb.read()
+                //read
+                await lowdb.read()
 
-            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
-            if (!haskey(lowdb.data, key)) {
-                lowdb.data[key] = []
-            }
-
-            //filter
-            let nAll = size(lowdb.data[key])
-            let nDel = 0
-            let b = false
-            if (iseobj(find)) {
-
-                //q
-                let q = new Query(find)
-                // console.log('q', q)
-
-                //find
-                let _res = q.find(lowdb.data[key]).all()
-                // console.log('_res', _res)
-
-                //nDel
-                nDel = size(_res)
-                // console.log('nDel', nDel)
-
-                if (nDel === 0) {
-                    //未有find結果等於不刪除
+                //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+                if (!haskey(lowdb.data, key)) {
+                    lowdb.data[key] = []
                 }
-                else if (nAll === nDel) {
-                    //全在find結果內等於全部刪除
+
+                //filter
+                let nAll = size(lowdb.data[key])
+                let nDel = 0
+                let b = false
+                if (iseobj(find)) {
+
+                    //q
+                    let q = new Query(find)
+                    // console.log('q', q)
+
+                    //find
+                    let _res = q.find(lowdb.data[key]).all()
+                    // console.log('_res', _res)
+
+                    //nDel
+                    nDel = size(_res)
+                    // console.log('nDel', nDel)
+
+                    if (nDel === 0) {
+                        //未有find結果等於不刪除
+                    }
+                    else if (nAll === nDel) {
+                        //全在find結果內等於全部刪除
+
+                        //empty
+                        lowdb.data[key] = []
+
+                        b = true
+                    }
+                    else {
+                        //部份在find結果內
+
+                        //_kp
+                        let _kp = {}
+                        each(_res, (v, k) => {
+                            _kp[v.id] = { k, v }
+                        })
+
+                        //arr
+                        let arr = []
+                        each(lowdb.data[key], (v, k) => {
+                            if (!haskey(_kp, v.id)) {
+                                //未在find結果內代表須保留
+                                arr.push(v)
+                            }
+                        })
+
+                        //update
+                        lowdb.data[key] = arr
+
+                        b = true
+                    }
+                }
+                else {
+
+                    //nDel
+                    nDel = nAll
 
                     //empty
                     lowdb.data[key] = []
 
                     b = true
                 }
-                else {
-                    //部份在find結果內
 
-                    //_kp
-                    let _kp = {}
-                    each(_res, (v, k) => {
-                        _kp[v.id] = { k, v }
-                    })
-
-                    //arr
-                    let arr = []
-                    each(lowdb.data[key], (v, k) => {
-                        if (!haskey(_kp, v.id)) {
-                            //未在find結果內代表須保留
-                            arr.push(v)
-                        }
-                    })
-
-                    //update
-                    lowdb.data[key] = arr
-
-                    b = true
+                //write
+                if (b) {
+                    await lowdb.write()
                 }
+
+                //res
+                res = {
+                    n: nAll,
+                    nDeleted: nDel,
+                    ok: 1,
+                }
+
+                //emit
+                ee.emit('change', 'delAll', null, res)
+
             }
-            else {
-
-                //nDel
-                nDel = nAll
-
-                //empty
-                lowdb.data[key] = []
-
-                b = true
-            }
-
-            //write
-            if (b) {
-                await lowdb.write()
-            }
-
-            //res
-            res = {
-                n: nAll,
-                nDeleted: nDel,
-                ok: 1,
+            catch (err) {
+                isErr = true
+                res = err
             }
 
-            //emit
-            ee.emit('change', 'delAll', null, res)
-
-        }
-        catch (err) {
-            isErr = true
-            res = err
-        }
-
-        if (isErr) {
-            return Promise.reject(res)
-        }
-        return res
+            if (isErr) {
+                return Promise.reject(res)
+            }
+            return res
+        })
     }
 
     //bind
@@ -656,7 +665,7 @@ export default WOrmLowdb
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.4</a> on Wed Apr 02 2025 11:25:26 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.4</a> on Fri May 09 2025 11:30:47 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

@@ -1,15 +1,16 @@
 {
   "name": "w-orm-lowdb",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "dist/w-orm-lowdb.umd.js",
   "dependencies": {
+    "async-mutex": "^0.5.0",
     "lodash-es": "^4.17.21",
     "lowdb": "^7.0.1",
-    "mingo": "^6.5.6",
-    "wsemi": "^1.7.74"
+    "mingo": "^6.6.1",
+    "wsemi": "^1.7.90"
   },
   "devDependencies": {
-    "w-package-tools": "^1.0.85"
+    "w-package-tools": "^1.0.90"
   },
   "scripts": {
     "test": "mocha --parallel --timeout 60000",
