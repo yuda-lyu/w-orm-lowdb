@@ -20,11 +20,6 @@ import arrPullAt from 'wsemi/src/arrPullAt.mjs'
 import waitFun from 'wsemi/src/waitFun.mjs'
 
 
-//全域鎖, 一次僅能執行一種操作函數
-//select理論上是不用鎖, 但因為操作上db.jon.tmp更名回db.json時似乎非rename而是串流寫入, 導致有機會撈到不完整json數據進而出錯, 故還是得要上鎖以策安全
-let glock = false
-
-
 /**
  * 操作資料庫(lowdb)
  *
@@ -71,6 +66,10 @@ function WOrmLowdb(opt = {}) {
 
     //ee
     let ee = new events.EventEmitter()
+
+    //全域鎖, 一次僅能執行一種操作函數, 使各類操作url(db.json)時能為獨占模式
+    //select理論上是不用鎖, 但因為操作上db.jon.tmp更名回db.json時似乎非rename而是串流寫入, 導致有機會撈到不完整json數據進而出錯, 故還是得要上鎖以策安全
+    let glock = false
 
     /**
      * 查詢數據
