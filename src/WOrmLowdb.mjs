@@ -155,7 +155,11 @@ function WOrmLowdb(opt = {}) {
 
         //check
         if (!iseobj(data) && !isearr(data)) {
-            return Promise.reject(`data is not an effective object or array`)
+            return {
+                n: 0,
+                nInserted: 0,
+                ok: 1,
+            }
         }
 
         //cloneDeep, 與外部數據脫勾
@@ -267,7 +271,7 @@ function WOrmLowdb(opt = {}) {
 
         //check
         if (!iseobj(data) && !isearr(data)) {
-            return Promise.reject(`data is not an effective object or array`)
+            return []
         }
 
         //cloneDeep, 與外部數據脫勾
@@ -402,7 +406,7 @@ function WOrmLowdb(opt = {}) {
 
         //check
         if (!iseobj(data) && !isearr(data)) {
-            return Promise.reject(`data is not an effective object or array`)
+            return []
         }
 
         //cloneDeep, 與外部數據脫勾
