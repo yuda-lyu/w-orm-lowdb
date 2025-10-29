@@ -12,10 +12,12 @@ An operator for lowdb in nodejs.
 To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-orm-lowdbOrm.html).
 
 ## Installation
+
 ### Using npm(ES6 module):
 ```alias
 npm i w-orm-lowdb
 ```
+
 #### Example
 > **Link:** [[dev source code](https://github.com/yuda-lyu/w-orm-lowdblob/master/g-basic.mjs)]
 ```alias
