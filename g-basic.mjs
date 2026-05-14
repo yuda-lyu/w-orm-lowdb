@@ -44,6 +44,14 @@ let rsm = [
     },
 ]
 
+let rsa = [
+    {
+        id: 'id-rosemary',
+        name: 'rosemary',
+        value: 654.321,
+    },
+]
+
 async function test() {
 
     //wo
@@ -105,6 +113,15 @@ async function test() {
     // let sr = await wo.select({ name: { $regex: 'PeT', $options: '$i' } })
     // console.log('selectReg', sr)
 
+    //save
+    await wo.save(rsa, { autoInsert: true })
+        .then(function(msg) {
+            console.log('save then', msg)
+        })
+        .catch(function(msg) {
+            console.log('save catch', msg)
+        })
+
     //del
     let d = ss.filter(function(v) {
         return v.name === 'kettle'
@@ -159,6 +176,8 @@ test()
 //     value: 456
 //   }
 // ]
+// change save
+// save then [ { n: 1, nModified: 1, ok: 1 } ]
 // change del
 // del then [ { n: 1, nDeleted: 1, ok: 1 } ]
 

@@ -58,6 +58,14 @@ if (isWindows()) {
                 },
             ]
 
+            let rsa = [
+                {
+                    id: 'id-rosemary',
+                    name: 'rosemary',
+                    value: 654.321,
+                },
+            ]
+
             //wo
             let wo = WOrm(opt)
 
@@ -286,9 +294,24 @@ if (isWindows()) {
             //     })
             // vget[9] = rt
 
+            //save
+            rt = null
+            vans[10] = [{ n: 1, nModified: 1, ok: 1 }]
+            await wo.save(rsa, { autoInsert: true })
+                .then(function(msg) {
+                    // console.log('save then', msg)
+                    // save then [ { n: 1, nModified: 1, ok: 1 } ]
+                    rt = msg
+                })
+                .catch(function(msg) {
+                    // console.log('save catch', msg)
+                    rt = msg.toString()
+                })
+            vget[10] = rt
+
             //del
             rt = null
-            vans[10] = [{ n: 1, nDeleted: 1, ok: 1 }]
+            vans[11] = [{ n: 1, nDeleted: 1, ok: 1 }]
             let ss = await wo.select()
             let d = ss.filter(function(v) {
                 return v.name === 'kettle'
@@ -303,7 +326,7 @@ if (isWindows()) {
                     // console.log('del catch', msg)
                     rt = msg.toString()
                 })
-            vget[10] = rt
+            vget[11] = rt
 
         })
 
@@ -315,7 +338,7 @@ if (isWindows()) {
             assert.strict.deepStrictEqual(vget[2], vans[2])
         })
 
-        it(`should get ${JSON.stringify(vans[3])} for save`, async function() {
+        it(`should get ${JSON.stringify(vans[3])} for save(autoInsert=false)`, async function() {
             assert.strict.deepStrictEqual(vget[3], vans[3])
         })
 
@@ -343,73 +366,15 @@ if (isWindows()) {
         //     assert.strict.deepStrictEqual(vget[9], vans[9])
         // })
 
-        it(`should get ${JSON.stringify(vans[10])} for del`, async function() {
+        it(`should get ${JSON.stringify(vans[10])} for save(autoInsert=true)`, async function() {
             assert.strict.deepStrictEqual(vget[10], vans[10])
         })
 
-    })
-
-    describe('save autoInsert', function() {
-        let url = './tmp/save-autoinsert.test.json'
-
-        beforeEach(async function() {
-            await fs.mkdir('./tmp', { recursive: true })
-            await fs.rm(url, { force: true })
-        })
-
-        afterEach(async function() {
-            await fs.rm(url, { force: true })
-        })
-
-        it('should preserve updated data when a later item is auto inserted', async function() {
-            let wo = WOrm({
-                url,
-                db: 'worm',
-                cl: 'items',
-            })
-
-            await wo.insert({
-                id: 'a',
-                n: 1,
-            })
-
-            let res = await wo.save([
-                {
-                    id: 'a',
-                    n: 2,
-                },
-                {
-                    id: 'b',
-                    n: 3,
-                },
-            ])
-
-            assert.strict.deepStrictEqual(res, [
-                {
-                    n: 1,
-                    nModified: 1,
-                    ok: 1,
-                },
-                {
-                    n: 1,
-                    nInserted: 1,
-                    ok: 1,
-                },
-            ])
-
-            let rows = await wo.select()
-            assert.strict.deepStrictEqual(rows, [
-                {
-                    id: 'a',
-                    n: 2,
-                },
-                {
-                    id: 'b',
-                    n: 3,
-                },
-            ])
+        it(`should get ${JSON.stringify(vans[11])} for del`, async function() {
+            assert.strict.deepStrictEqual(vget[11], vans[11])
         })
 
     })
+
 }
 

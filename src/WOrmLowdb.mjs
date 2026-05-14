@@ -354,8 +354,11 @@ function WOrmLowdb(opt = {}) {
                 //查找資料表內v.id
                 let r = get(kp, v.id, null)
 
+                //existed
+                let existed = iseobj(r)
+
                 //check
-                if (iseobj(r)) {
+                if (existed) {
                     //已存在v.id
                     if (isEqual(v, r.v)) {
                         //內容相同不更新
@@ -369,6 +372,9 @@ function WOrmLowdb(opt = {}) {
                         rest = { update: true }
                         b = true
                     }
+                }
+                else {
+                    //內容不存在
                 }
 
                 //rest
@@ -386,29 +392,23 @@ function WOrmLowdb(opt = {}) {
                         ok: 1,
                     }
                 }
+                //rest.n === 0:
+                // 內容相同不更新, 不須update
+                // 內容不存在, 若autoInsert則須insert
 
                 //autoInsert
-                if (autoInsert && rest.n === 0) {
-                    if (!haskey(kp, v.id)) {
-                        let k = size(lowdb.data[key])
-                        lowdb.data[key].push(v)
-                        kp[v.id] = {
-                            k,
-                            v: lowdb.data[key][k],
-                        }
-                        b = true
-                        rest = {
-                            n: 1,
-                            nInserted: 1,
-                            ok: 1,
-                        }
+                if (autoInsert && rest.n === 0 && !existed) {
+                    let k = size(lowdb.data[key])
+                    lowdb.data[key].push(v)
+                    kp[v.id] = {
+                        k,
+                        v: lowdb.data[key][k],
                     }
-                    else {
-                        rest = {
-                            n: 1,
-                            nInserted: 0,
-                            ok: 1,
-                        }
+                    b = true
+                    rest = {
+                        n: 1,
+                        nInserted: 1,
+                        ok: 1,
                     }
                 }
 
