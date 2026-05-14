@@ -2,7 +2,7 @@ import path from 'path'
 import events from 'events'
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
-import { Query } from 'mingo' //須指定安裝6.5.6, 若6.6.0無法匯入Query
+import { Query } from 'mingo'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'
@@ -36,6 +36,9 @@ let kpGlock = {}
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
  */
 function WOrmLowdb(opt = {}) {
+
+    //_cache
+    let _cache = null
 
     //url
     let url = get(opt, 'url')
@@ -81,6 +84,28 @@ function WOrmLowdb(opt = {}) {
         kpGlock[gkey] = false
     }
 
+    //getData
+    let getData = async() => {
+
+        //check
+        if (isarr(_cache)) {
+            return cloneDeep(_cache) //與外部使用數據脫勾
+        }
+
+        //read
+        await lowdb.read()
+
+        //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
+        if (!haskey(lowdb.data, key)) {
+            lowdb.data[key] = []
+        }
+
+        //update
+        _cache = lowdb.data[key]
+
+        return cloneDeep(_cache) //與外部使用數據脫勾
+    }
+
     /**
      * 查詢數據
      *
@@ -95,13 +120,8 @@ function WOrmLowdb(opt = {}) {
         let res = null
         try {
 
-            //read
-            await lowdb.read()
-
-            //default, 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
-            if (!haskey(lowdb.data, key)) {
-                lowdb.data[key] = []
-            }
+            //ltdt
+            let ltdt = await getData()
 
             //filter
             if (iseobj(find)) {
@@ -111,12 +131,12 @@ function WOrmLowdb(opt = {}) {
                 // console.log('q', q)
 
                 //find
-                res = q.find(lowdb.data[key]).all()
+                res = q.find(ltdt).all()
                 // console.log('res', res)
 
             }
             else {
-                res = lowdb.data[key]
+                res = ltdt
             }
 
         }
@@ -230,13 +250,26 @@ function WOrmLowdb(opt = {}) {
                 ok: 1,
             }
 
-            //emit
-            ee.emit('change', 'insert', data, res)
-
         }
         catch (err) {
             isErr = true
             res = err
+        }
+
+        //update, 不能保證插入多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            try {
+
+                //emit
+                ee.emit('change', 'insert', data, res)
+
+            }
+            catch (err) {
+                console.log(err)
+            }
         }
 
         if (isErr) {
@@ -356,7 +389,27 @@ function WOrmLowdb(opt = {}) {
 
                 //autoInsert
                 if (autoInsert && rest.n === 0) {
-                    rest = await insertCore(v)
+                    if (!haskey(kp, v.id)) {
+                        let k = size(lowdb.data[key])
+                        lowdb.data[key].push(v)
+                        kp[v.id] = {
+                            k,
+                            v: lowdb.data[key][k],
+                        }
+                        b = true
+                        rest = {
+                            n: 1,
+                            nInserted: 1,
+                            ok: 1,
+                        }
+                    }
+                    else {
+                        rest = {
+                            n: 1,
+                            nInserted: 0,
+                            ok: 1,
+                        }
+                    }
                 }
 
                 return rest
@@ -367,13 +420,26 @@ function WOrmLowdb(opt = {}) {
                 await lowdb.write()
             }
 
-            //emit
-            ee.emit('change', 'save', data, res)
-
         }
         catch (err) {
             isErr = true
             res = err
+        }
+
+        //update, 不能保證變更多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            try {
+
+                //emit
+                ee.emit('change', 'save', data, res)
+
+            }
+            catch (err) {
+                console.log(err)
+            }
         }
 
         if (isErr) {
@@ -507,13 +573,26 @@ function WOrmLowdb(opt = {}) {
                 await lowdb.write()
             }
 
-            //emit
-            ee.emit('change', 'del', data, res)
-
         }
         catch (err) {
             isErr = true
             res = err
+        }
+
+        //update, 不能保證刪除多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            try {
+
+                //emit
+                ee.emit('change', 'del', data, res)
+
+            }
+            catch (err) {
+                console.log(err)
+            }
         }
 
         if (isErr) {
@@ -632,13 +711,26 @@ function WOrmLowdb(opt = {}) {
                 ok: 1,
             }
 
-            //emit
-            ee.emit('change', 'delAll', null, res)
-
         }
         catch (err) {
             isErr = true
             res = err
+        }
+
+        //update, 不能保證刪除多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            try {
+
+                //emit
+                ee.emit('change', 'delAll', null, res)
+
+            }
+            catch (err) {
+                console.log(err)
+            }
         }
 
         if (isErr) {

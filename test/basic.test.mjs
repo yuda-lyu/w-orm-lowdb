@@ -1,4 +1,5 @@
 import assert from 'assert'
+import fs from 'node:fs/promises'
 import WOrm from '../src/WOrmLowdb.mjs'
 import w from 'wsemi'
 
@@ -344,6 +345,69 @@ if (isWindows()) {
 
         it(`should get ${JSON.stringify(vans[10])} for del`, async function() {
             assert.strict.deepStrictEqual(vget[10], vans[10])
+        })
+
+    })
+
+    describe('save autoInsert', function() {
+        let url = './tmp/save-autoinsert.test.json'
+
+        beforeEach(async function() {
+            await fs.mkdir('./tmp', { recursive: true })
+            await fs.rm(url, { force: true })
+        })
+
+        afterEach(async function() {
+            await fs.rm(url, { force: true })
+        })
+
+        it('should preserve updated data when a later item is auto inserted', async function() {
+            let wo = WOrm({
+                url,
+                db: 'worm',
+                cl: 'items',
+            })
+
+            await wo.insert({
+                id: 'a',
+                n: 1,
+            })
+
+            let res = await wo.save([
+                {
+                    id: 'a',
+                    n: 2,
+                },
+                {
+                    id: 'b',
+                    n: 3,
+                },
+            ])
+
+            assert.strict.deepStrictEqual(res, [
+                {
+                    n: 1,
+                    nModified: 1,
+                    ok: 1,
+                },
+                {
+                    n: 1,
+                    nInserted: 1,
+                    ok: 1,
+                },
+            ])
+
+            let rows = await wo.select()
+            assert.strict.deepStrictEqual(rows, [
+                {
+                    id: 'a',
+                    n: 2,
+                },
+                {
+                    id: 'b',
+                    n: 3,
+                },
+            ])
         })
 
     })

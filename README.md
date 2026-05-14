@@ -1,6 +1,9 @@
 # w-orm-lowdb
 An operator for lowdb in nodejs.
 
+## 注意
+同 process 內多個 WOrm 實例共用記憶體鎖、序列化同一個 JSON 檔的讀寫。不支援多個 process 操作。
+
 ![language](https://img.shields.io/badge/language-JavaScript-orange.svg) 
 [![npm version](http://img.shields.io/npm/v/w-orm-lowdbvg?style=flat)](https://npmjs.org/package/w-orm-lolowdb
 [![license](https://img.shields.io/npm/l/w-orm-lowdbvg?style=flat)](https://npmjs.org/package/w-orm-lolowdb
