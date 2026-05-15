@@ -13,6 +13,7 @@ import cloneDeep from 'lodash-es/cloneDeep.js'
 import genID from 'wsemi/src/genID.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import isarr from 'wsemi/src/isarr.mjs'
+import isbol from 'wsemi/src/isbol.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
@@ -33,6 +34,7 @@ let kpGlock = {}
  * @param {String} [opt.url='./db.json'] 輸入資料庫位置字串，預設'./db.json'
  * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'
+ * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
  */
 function WOrmLowdb(opt = {}) {
@@ -56,6 +58,12 @@ function WOrmLowdb(opt = {}) {
     let cl = get(opt, 'cl')
     if (!isestr(cl)) {
         cl = 'test'
+    }
+
+    //useCache
+    let useCache = get(opt, 'useCache')
+    if (!isbol(useCache)) {
+        useCache = false
     }
 
     //key
@@ -88,7 +96,7 @@ function WOrmLowdb(opt = {}) {
     let getData = async() => {
 
         //check
-        if (isarr(_cache)) {
+        if (useCache && isarr(_cache)) {
             return cloneDeep(_cache) //與外部使用數據脫勾
         }
 
@@ -100,10 +108,14 @@ function WOrmLowdb(opt = {}) {
             lowdb.data[key] = []
         }
 
-        //update
-        _cache = lowdb.data[key]
+        //ltdt
+        let ltdt = cloneDeep(lowdb.data[key]) //數據為lowdb內部的記憶體狀態本體, 須cloneDeep與外部使用數據脫勾
 
-        return cloneDeep(_cache) //與外部使用數據脫勾
+        if (useCache) {
+            _cache = ltdt
+            return cloneDeep(ltdt) //與外部使用數據脫勾
+        }
+        return ltdt
     }
 
     /**
