@@ -1,11 +1,11 @@
 {
   "name": "w-orm-lowdb",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "main": "dist/w-orm-lowdb.umd.js",
   "dependencies": {
     "lowdb": "^7.0.1",
     "mingo": "^7.2.1",
-    "wsemi": "^1.8.68"
+    "wsemi": "^1.8.70"
   },
   "devDependencies": {
     "w-package-tools": "^1.1.12"
