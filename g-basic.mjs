@@ -61,6 +61,9 @@ async function test() {
     wo.on('change', function(mode, data, res) {
         console.log('change', mode)
     })
+    wo.on('error', function(mode, data, err) {
+        console.log('error', mode, err)
+    })
 
     //delAll
     await wo.delAll()
@@ -80,6 +83,33 @@ async function test() {
             console.log('insert catch', msg)
         })
 
+    //insert by returnList, 回傳與輸入等長保序之逐筆結果, nInserted為1即該筆為新增
+    await wo.insert([{ id: 'id-peter' }, { id: 'id-new' }], { returnList: true })
+        .then(function(msg) {
+            console.log('insert(returnList) then', msg)
+        })
+        .catch(function(msg) {
+            console.log('insert(returnList) catch', msg)
+        })
+
+    //insertBulk, 全有全無, 任一筆主鍵已存在即整批reject且不寫入任何一筆
+    await wo.insertBulk([{ id: 'id-bulk1' }, { id: 'id-bulk2' }])
+        .then(function(msg) {
+            console.log('insertBulk then', msg)
+        })
+        .catch(function(msg) {
+            console.log('insertBulk catch', msg.toString())
+        })
+
+    //insertBulk by existed id
+    await wo.insertBulk([{ id: 'id-bulk3' }, { id: 'id-peter' }])
+        .then(function(msg) {
+            console.log('insertBulk(existed) then', msg)
+        })
+        .catch(function(msg) {
+            console.log('insertBulk(existed) catch', msg.toString())
+        })
+
     //save
     await wo.save(rsm, { autoInsert: false })
         .then(function(msg) {
@@ -87,6 +117,23 @@ async function test() {
         })
         .catch(function(msg) {
             console.log('save catch', msg)
+        })
+
+    //selectByPk
+    let sp = await wo.selectByPk('id-rosemary')
+    console.log('selectByPk', sp)
+
+    //selectByPk by non-existed id
+    let spn = await wo.selectByPk('id-non-existed')
+    console.log('selectByPk(non-existed)', spn)
+
+    //del by id-new, id-bulk1, id-bulk2
+    await wo.del([{ id: 'id-new' }, { id: 'id-bulk1' }, { id: 'id-bulk2' }])
+        .then(function(msg) {
+            console.log('del(clean) then', msg)
+        })
+        .catch(function(msg) {
+            console.log('del(clean) catch', msg)
         })
 
     //select all
@@ -134,52 +181,23 @@ async function test() {
             console.log('del catch', msg)
         })
 
+    //del by invalid id, 未帶有效主鍵者為該筆ok為0並附err, 整批仍resolve
+    await wo.del([{ name: 'no-id' }])
+        .then(function(msg) {
+            console.log('del(invalid id) then', msg)
+        })
+        .catch(function(msg) {
+            console.log('del(invalid id) catch', msg)
+        })
+
+    //delAll by find
+    await wo.delAll({ value: { '$gte': 600 } })
+        .then(function(msg) {
+            console.log('delAll(find) then', msg)
+        })
+        .catch(function(msg) {
+            console.log('delAll(find) catch', msg)
+        })
+
 }
 test()
-// change delAll
-// delAll then { n: 2, nDeleted: 2, ok: 1 }
-// change insert
-// insert then { n: 3, nInserted: 3, ok: 1 }
-// change save
-// save then [
-//   { n: 1, nModified: 1, ok: 1 },
-//   { n: 1, nModified: 1, ok: 1 },
-//   { n: 0, nModified: 0, ok: 1 }
-// ]
-// select all [
-//   { id: 'id-peter', name: 'peter(modify)', value: 123 },
-//   { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 },
-//   {
-//     id: {random id},
-//     name: 'kettle',
-//     value: 456
-//   }
-// ]
-// select [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
-// select by $and, $gt, $lt [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
-// select by $or, $gte, $lte [
-//   {
-//     id: {random id},
-//     name: 'kettle',
-//     value: 456
-//   }
-// ]
-// select by $or, $and, $ne, $in, $nin [
-//   {
-//     id: 'id-rosemary',
-//     name: 'rosemary(modify)',
-//     value: 123.456
-//   },
-//   {
-//     id: {random id},
-//     name: 'kettle',
-//     value: 456
-//   }
-// ]
-// change save
-// save then [ { n: 1, nModified: 1, ok: 1 } ]
-// change del
-// del then [ { n: 1, nDeleted: 1, ok: 1 } ]
-
-
-//node g-basic.mjs

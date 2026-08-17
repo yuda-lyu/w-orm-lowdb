@@ -77,8 +77,7 @@ describe('basic', function() {
             .then(function(msg) {
                 // console.log('delAll then', msg)
                 //考慮可能有不同初始測試數據
-                // delAll then { n: 2, nDeleted: 2, ok: 1 }
-                // delAll then { n: 3, nDeleted: 2, ok: 1 }
+                // delAll then { n: 0, nDeleted: 0, ok: 1 }
                 //僅針對nDeleted與ok欄位比對
                 rt = {
                     nDeleted: msg.nDeleted,
@@ -107,19 +106,21 @@ describe('basic', function() {
         vget[2] = rt
 
         //save
+        //註: 第三筆之id為空字串, 於autoGenPk為true時會補上新主鍵值, 故必為未命中,
+        //而autoInsert為false故不插入, 該筆n為0
         rt = null
         // vans[3] = [
-        //     { n: 1, nModified: 1, ok: 1 },
-        //     { n: 1, nModified: 1, ok: 1 },
-        //     { n: 0, nModified: 0, ok: 1 }
+        //     { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+        //     { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+        //     { n: 0, nInserted: 0, nModified: 0, ok: 1 }
         // ]
         await wo.save(rsm, { autoInsert: false })
             .then(function(msg) {
                 // console.log('save then', msg)
                 // save then [
-                //   { n: 1, nModified: 1, ok: 1 },
-                //   { n: 1, nModified: 1, ok: 1 },
-                //   { n: 0, nModified: 0, ok: 1 }
+                //   { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+                //   { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+                //   { n: 0, nInserted: 0, nModified: 0, ok: 1 }
                 // ]
                 rt = msg
             })
@@ -135,7 +136,7 @@ describe('basic', function() {
         //     { id: 'id-peter', name: 'peter(modify)', value: 123 },
         //     { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 },
         //     {
-        //         // id: {random id},
+        //         // id: {auto gen id},
         //         name: 'kettle',
         //         value: 456
         //     }
@@ -143,15 +144,6 @@ describe('basic', function() {
         await wo.select()
             .then(function(msg) {
                 // console.log('select all then', msg)
-                // select all [
-                //   { id: 'id-peter', name: 'peter(modify)', value: 123 },
-                //   { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 },
-                //   {
-                //     id: {random id},
-                //     name: 'kettle',
-                //     value: 456
-                //   }
-                // ]
                 rt = [
                     msg[0],
                     msg[1],
@@ -173,7 +165,6 @@ describe('basic', function() {
         await wo.select({ id: 'id-rosemary' })
             .then(function(msg) {
                 // console.log('select then', msg)
-                // select [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
                 rt = msg
             })
             .catch(function(msg) {
@@ -188,7 +179,6 @@ describe('basic', function() {
         await wo.select({ '$and': [{ value: { '$gt': 123 } }, { value: { '$lt': 200 } }] })
             .then(function(msg) {
                 // console.log('select by $and, $gt, $lt then', msg)
-                // select by $and, $gt, $lt [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
                 rt = msg
             })
             .catch(function(msg) {
@@ -201,7 +191,7 @@ describe('basic', function() {
         rt = null
         // vans[7] = [
         //     {
-        //         // id: {random id},
+        //         // id: {auto gen id},
         //         name: 'kettle',
         //         value: 456
         //     }
@@ -209,13 +199,6 @@ describe('basic', function() {
         await wo.select({ '$or': [{ value: { '$lte': -1 } }, { value: { '$gte': 200 } }] })
             .then(function(msg) {
                 // console.log('select by $or, $gte, $lte then', msg)
-                // select by $or, $gte, $lte [
-                //   {
-                //     id: {random id},
-                //     name: 'kettle',
-                //     value: 456
-                //   }
-                // ]
                 rt = [
                     {
                         name: msg[0].name,
@@ -238,7 +221,7 @@ describe('basic', function() {
         //         value: 123.456
         //     },
         //     {
-        //         // id: {random id},
+        //         // id: {auto gen id},
         //         name: 'kettle',
         //         value: 456
         //     }
@@ -246,18 +229,6 @@ describe('basic', function() {
         await wo.select({ '$or': [{ '$and': [{ value: { '$ne': 123 } }, { value: { '$in': [123, 321, 123.456, 456] } }, { value: { '$nin': [456, 654] } }] }, { '$or': [{ value: { '$lte': -1 } }, { value: { '$gte': 400 } }] }] })
             .then(function(msg) {
                 // console.log('select by $or, $and, $ne, $in, $nin then', msg)
-                // select by $or, $and, $ne, $in, $nin [
-                //   {
-                //     id: 'id-rosemary',
-                //     name: 'rosemary(modify)',
-                //     value: 123.456
-                //   },
-                //   {
-                //     id: {random id},
-                //     name: 'kettle',
-                //     value: 456
-                //   }
-                // ]
                 rt = [
                     msg[0],
                     {
@@ -272,28 +243,44 @@ describe('basic', function() {
             })
         vget[8] = rt
 
-        // //select by regex
+        // //select by regex //mingo不支援regex
         // rt = null
         // vans[9] = [{ id: 'id-peter', name: 'peter(modify)', value: 123 }]
         // await wo.select({ name: { $regex: 'PeT', $options: '$i' } })
         //     .then(function(msg) {
-        //         // console.log('select by regex then', msg)
-        //         // selectReg [ { id: 'id-peter', name: 'peter(modify)', value: 123 } ]
         //         rt = msg
         //     })
         //     .catch(function(msg) {
-        //         // console.log('select by regex catch', msg)
         //         rt = msg.toString()
         //     })
         // vget[9] = rt
 
+        //select回傳恆為陣列, 無符合數據回空陣列
+        rt = null
+        // vans[12] = []
+        await wo.select({ id: 'id-not-existed' })
+            .then(function(msg) {
+                rt = msg
+            })
+            .catch(function(msg) {
+                rt = msg.toString()
+            })
+        vget[12] = rt
+
+        //selectByPk, 命中者內容須與select({主鍵})[0]相同
+        rt = null
+        // vans[13] = true
+        let vp = await wo.selectByPk('id-peter')
+        let vs = await wo.select({ id: 'id-peter' })
+        vget[13] = JSON.stringify(vp) === JSON.stringify(vs[0])
+
         //save
         rt = null
-        // vans[10] = [ { n: 1, nModified: 1, ok: 1 } ]
+        // vans[10] = [{ n: 1, nInserted: 0, nModified: 1, ok: 1 }]
         await wo.save(rsa, { autoInsert: true })
             .then(function(msg) {
                 // console.log('save then', msg)
-                // save then [ { n: 1, nModified: 1, ok: 1 } ]
+                // save then [ { n: 1, nInserted: 0, nModified: 1, ok: 1 } ]
                 rt = msg
             })
             .catch(function(msg) {
@@ -341,9 +328,9 @@ describe('basic', function() {
     })
 
     vans[3] = [
-        { n: 1, nModified: 1, ok: 1 },
-        { n: 1, nModified: 1, ok: 1 },
-        { n: 0, nModified: 0, ok: 1 }
+        { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+        { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+        { n: 0, nInserted: 0, nModified: 0, ok: 1 }
     ]
     it(`should get ${JSON.stringify(vans[3])} for save(autoInsert=false)`, async function() {
         assert.strict.deepStrictEqual(vget[3], vans[3])
@@ -353,7 +340,7 @@ describe('basic', function() {
         { id: 'id-peter', name: 'peter(modify)', value: 123 },
         { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 },
         {
-            // id: {random id},
+            // id: {auto gen id},
             name: 'kettle',
             value: 456
         }
@@ -374,7 +361,7 @@ describe('basic', function() {
 
     vans[7] = [
         {
-            // id: {random id},
+            // id: {auto gen id},
             name: 'kettle',
             value: 456
         }
@@ -390,7 +377,7 @@ describe('basic', function() {
             value: 123.456
         },
         {
-            // id: {random id},
+            // id: {auto gen id},
             name: 'kettle',
             value: 456
         }
@@ -404,7 +391,17 @@ describe('basic', function() {
     //     assert.strict.deepStrictEqual(vget[9], vans[9])
     // })
 
-    vans[10] = [{ n: 1, nModified: 1, ok: 1 }]
+    vans[12] = []
+    it(`should get ${JSON.stringify(vans[12])} for select without matched data`, async function() {
+        assert.strict.deepStrictEqual(vget[12], vans[12])
+    })
+
+    vans[13] = true
+    it(`should get ${JSON.stringify(vans[13])} for selectByPk equal to select({pk})[0]`, async function() {
+        assert.strict.deepStrictEqual(vget[13], vans[13])
+    })
+
+    vans[10] = [{ n: 1, nInserted: 0, nModified: 1, ok: 1 }]
     it(`should get ${JSON.stringify(vans[10])} for save(autoInsert=true)`, async function() {
         assert.strict.deepStrictEqual(vget[10], vans[10])
     })

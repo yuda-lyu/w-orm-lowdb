@@ -4,11 +4,6 @@
       "id": "id-peter",
       "name": "peter(modify)",
       "value": 123
-    },
-    {
-      "id": "id-rosemary",
-      "name": "rosemary",
-      "value": 654.321
     }
   ]
 }

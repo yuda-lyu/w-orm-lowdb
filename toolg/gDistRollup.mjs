@@ -7,17 +7,17 @@ let fdTar = './dist'
 
 
 rollupFiles({
-    fns: getFiles(fdSrc),
+    fns: 'WOrmLowdb.mjs',
     fdSrc,
     fdTar,
     nameDistType: 'kebabCase',
     globals: {
-        'events': 'events',
+        'path': 'path',
         'lowdb': 'lowdb',
         'mingo': 'mingo',
     },
     external: [
-        'events',
+        'path',
         'lowdb',
         'mingo',
     ],
