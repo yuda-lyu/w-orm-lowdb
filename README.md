@@ -67,6 +67,30 @@ Date：本套件以 JSON 存檔，Date 存入後為 ISO 字串(`toISOString()`)�
 
 語意為 MongoDB 式：`{ f: null }` 命中 `f` 為 `null` 或缺欄之數據，`$ne: x`(x 非 `null`)與 `$nin` 亦命中欄位為 `null` 或缺欄之數據，`$ne: null` 則排除之。欄名同於 `Object.prototype` 成員者(`constructor`、`toString`、`hasOwnProperty` 等)，數據無此自有欄位時視為缺欄。欄位值為陣列時，純量與 `$in` 條件仍以元素比對(`{ tags: 'x' }` 命中 `tags: ['x', 'y']`)。欲在 `w-orm-*` 各後端得到相同結果，請明確寫出：排除 null/缺欄用 `{ $and: [{ f: { $ne: null } }, { f: { $ne: x } }] }`，含 null/缺欄用 `{ $or: [{ f: null }, { f: { $ne: x } }] }`。
 
+### 字串良構 (Well-formed strings)
+
+JavaScript 字串可含孤立代理字元(lone surrogate，即成對代理被拆開後只剩一半，如 `'a\uD800'`，`isWellFormed()` 為 `false`)。lowdb 以 JSON 檔存放，孤立代理字元可保真(寫入以 `\ud800` 轉義，讀回仍為孤立代理)，本身不會造成主鍵相撞；但 w-orm 系列其他後端(UTF-8、BSON 儲存)會把它改寫為 U+FFFD，使不同主鍵寫成同一鍵、文件內相異鍵名撞鍵、寫入值與讀回值不同。為使同一應用更換後端時資料行為一致，系列規則為一律拒收，本套件亦同，於任何讀取與寫入之前檢核，檢核為 `wsemi` 之 `chkOrmStr`、`chkOrmData`(w-orm 系列共用)：
+
+- **主鍵 `id`**：不得含孤立代理字元，亦不得含 NUL 字元(U+0000)，與 `find` 同標準；不隨 `autoGenPk` 改變。
+- **寫入資料**(`insert`、`insertBulk`、`save`)：任何字串值與鍵名(含巢狀物件、陣列元素、`Map`/`Set` 項目、`Error`/`RegExp` 之文字)不得含孤立代理字元；值與鍵名內之 NUL 不在此規則拒收範圍。
+- **`opt.url`、`opt.db`、`opt.cl`**：含孤立代理字元者建構時 throw `invalid opt.<名>: string contains lone surrogate`，不建立任何檔案。
+- U+FFFD 本身與成對代理(emoji、CJK 擴充 B 區以後之罕用字)為良構，照常接受。
+
+拒收之處置與既有「無效主鍵」同形，訊息為固定詞彙、不回顯值：
+
+| 呼叫 | 結果 |
+|---|---|
+| `insert`、`insertBulk` | 整批 reject，不寫入任何一筆；於 reject 之前發出一次 `error` 事件 |
+| `save`、`del` | 該筆 `ok: 0` 附 `err`，同批其他筆照常處理 |
+| `selectByPk` | 回傳 `null`(不 reject、不發事件) |
+| `select`、`delAll` | 不變：`invalid find: <原因> at [<路徑>]` |
+
+訊息為 `invalid id: <原因> at [data[<k>].id]` 與 `invalid data: <原因> at [data[<k>].<路徑>]`(`<k>` 為批次索引，單一物件呼叫為 `data[0]`；不合格之鍵名以 `<invalid key>` 表示)，`<原因>` 為 `string contains lone surrogate`、`string contains NUL`(僅主鍵)、`not a string` 或 `string is empty`(`del` 之 `id` 未給、非字串或空字串；取代原本回顯值之 `can not delete by invalid id[...]`)。同批以索引最小之不合格筆為準，同一筆內主鍵先於資料；與 Date 範圍檢核並存時，Date 範圍檢核先於良構檢核。
+
+**既有資料不遷移、不改讀取**：本規則實施前以孤立代理字元為主鍵寫入者，因本套件保真而仍留在檔案內，`select` 仍讀得到。檢出：`(await wo.select()).filter((r) => typeof r.id === 'string' && !r.id.isWellFormed())`。因孤立 `id` 本身已不可作為 `del`、`selectByPk` 之參數(被拒)，清除須依該列之其他欄位 `delAll({ 欄: 值 })`，或 `delAll()` 清空整表，或直接改檔；若該列只有 `id` 欄，則僅能 `delAll()` 或改檔。已存入之值內孤立代理字元仍保真，對該列未含該欄之 `save` 更新照常成功(只檢核本次寫入之內容，不連坐檢核既有內容)。**主鍵含 NUL 之舊列**(原可保真存入)亦不再可由主鍵定址(`selectByPk` 回 `null`、`del` 該筆 `ok: 0`)；其 `id` 為良構故上述 `isWellFormed` 檢出法不涵蓋，可改以 `r.id.includes('\u0000')` 檢出，清除同樣須依其他欄位 `delAll({ 欄: 值 })`、`delAll()` 或改檔。
+
+已知限制：`String` 包裝物件(`new String('...')`)僅檢核其字串值、不解包；`toJSON` 或自訂序列化之輸出不檢核。
+
 ### 破壞性變更 (Breaking changes)
 
 原本被接受或被靜默放行之條件，現改為 reject，不設過渡期。
@@ -77,6 +101,8 @@ Date：本套件以 JSON 存檔，Date 存入後為 ISO 字串(`toISOString()`)�
 - 改為 reject(Date 範圍)：條件內任何位置之 `Date` 年份小於 0 或大於 9999(如 `new Date(8.64e15)`)，原本轉為帶正負號之 ISO 字串後以字典序比較，結果與時間序顛倒(`$gt` 哨兵命中所有帶日期之數據、`$lt` 哨兵恆無命中)，現整批 reject；數據側見下一條。
 - 改為 reject(寫入 Date 範圍，1.0.34 起)：`insert`、`insertBulk`、`save` 寫入之數據內任何深度之 `Date` 年份小於 0 或大於 9999(如以 `new Date(8.64e15)` 作「永不過期」哨兵)，原本照存為 `+yyyyyy-…`、`-yyyyyy-…` 字串(其後會被 `{ t: { $lt: 現在 } }` 因字典序命中而遭 `delAll` 刪除)，現整批 reject，訊息為 `invalid data: Date year is out of range 0000-9999 at [<路徑>]`；請改用 `null` 或 `new Date('9999-12-31T23:59:59.999Z')`。既有資料不遷移，仍有字典序風險，請自行清理或改寫(見上方「寫入數據之 Date」)。
 - 錯誤訊息為 `invalid find: <原因> at [<路徑>]`；原本由 `mingo` 拋出錯誤者，現統一為此訊息。
+- 改為 reject(字串良構)：主鍵含孤立代理字元或 NUL；寫入資料之字串值或鍵名含孤立代理字元；`opt.url`、`opt.db`、`opt.cl` 含孤立代理字元(建構時 throw)。原本 lowdb 以 JSON 保真而照存，現為系列一致而拒收，見上節「字串良構」。`del` 未給有效 `id` 之 `err` 由 `can not delete by invalid id[<值>]` 改為 `invalid id: <原因> at [data[<k>].id]`(不回顯值)。
+- 修正(主鍵為 `Object.prototype` 成員名)：主鍵為 `constructor`、`toString`、`valueOf`、`hasOwnProperty`、`__proto__` 等時，原本 `insert` 回 `{ n: 1, nInserted: 0, ok: 1 }` 而靜默不寫入，`insertBulk` 誤報 `can not insertBulk by existed id[...]`，以 `__proto__` 為主鍵之紀錄其欄位名(及 `k`、`v`)還會被誤認為其他主鍵(同批之後筆被判已存在、`del` 誤報已刪)；現主鍵存在與否以 `Map` 判定，與一般字串主鍵行為相同。
 
 ## Documentation
 To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-orm-lowdbOrm.html).
@@ -351,9 +377,9 @@ test()
 // save then [ { n: 1, nInserted: 0, nModified: 1, ok: 1 } ]
 // change del
 // del then [ { n: 1, nDeleted: 1, ok: 1 } ]
-// error del can not delete by invalid id[]
+// error del invalid id: not a string at [data[0].id]
 // change del
-// del(invalid id) then [ { n: 0, nDeleted: 0, ok: 0, err: 'can not delete by invalid id[]' } ]
+// del(invalid id) then [ { n: 0, nDeleted: 0, ok: 0, err: 'invalid id: not a string at [data[0].id]' } ]
 // change delAll
 // delAll(find) then { n: 1, nDeleted: 1, ok: 1 }
 ```

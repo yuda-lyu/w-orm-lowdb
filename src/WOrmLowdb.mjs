@@ -20,6 +20,8 @@ import iseobj from 'wsemi/src/iseobj.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
+import chkOrmStr from 'wsemi/src/chkOrmStr.mjs'
+import chkOrmData from 'wsemi/src/chkOrmData.mjs'
 
 
 //kpGqueue, 以資料庫檔案路徑為鍵之全域序列化佇列, 詳見下方serialize說明
@@ -53,11 +55,21 @@ let kpGqueue = {}
  * 故僅單一行程內併發成立，跨行程併發不成立，詳見README之併發保證宣告。
  * 註: 數據以JSON存檔，Date存入後為ISO字串；insert、insertBulk與save寫入之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject，詳見各函數與README。
  *
+ * 字串良構(w-orm系列規則，wsemi之chkOrmStr與chkOrmData): lowdb以JSON檔存放，孤立代理字元(String.prototype.isWellFormed()為false)可保真，本身不致相撞，
+ * 惟系列其他後端(UTF-8、BSON儲存)會改寫為U+FFFD，為使更換後端時資料行為一致，全系列一律於任何讀取與寫入之前拒收：
+ * 1. 主鍵(id)不得含孤立代理字元與NUL，不隨autoGenPk改變；
+ * 2. 寫入資料(insert、insertBulk、save)之字串值與鍵名(含巢狀物件、陣列元素、Map與Set之項目、Error與RegExp之文字)不得含孤立代理字元，值與鍵名之NUL不拒；
+ * 3. opt.url、opt.db、opt.cl含孤立代理字元者於建構時throw，訊息為invalid opt.<名>: string contains lone surrogate。
+ * 處置與無效主鍵同形：insert與insertBulk整批reject而不寫入任何一筆(error事件先於reject)，save與del該筆ok為0並附err(同批其他筆照常)，selectByPk回null；
+ * 訊息為固定詞彙而不回顯值：invalid id: 原因 at [data[k].id]、invalid data: 原因 at [data[k].路徑](k為批次索引，單一物件為0；不合格之鍵名以<invalid key>標示)，
+ * 原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
+ * U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。
+ *
  * @class
  * @param {Object} [opt={}] 輸入設定物件，預設{}
- * @param {String} [opt.url='./db.json'] 輸入資料庫位置字串，預設'./db.json'
- * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'
- * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'
+ * @param {String} [opt.url='./db.json'] 輸入資料庫位置字串，預設'./db.json'；含孤立代理字元者建構時throw
+ * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'；含孤立代理字元者建構時throw
+ * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw
  * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
  * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
@@ -67,10 +79,23 @@ function WOrmLowdb(opt = {}) {
     //_cache
     let _cache = null
 
+    //chkOptStr, 儲存位址名稱(opt.url、opt.db、opt.cl)之良構檢核, 孤立代理字元者於建構時同步throw, 先於建立任何檔案或讀寫:
+    //url為檔案路徑, 經檔案系統UTF-8化後孤立代理被改寫為U+FFFD而落到他檔; db與cl雖為JSON內之鍵可保真, 全系列仍一律拒收(同一應用更換後端時行為一致);
+    //名稱不檢NUL(opt.nul為false), 訊息不回顯值
+    let chkOptStr = (name, v) => {
+        let r = chkOrmStr(v, { nul: false })
+        if (r !== null) {
+            throw new Error(`invalid opt.${name}: ${r}`)
+        }
+    }
+
     //url
     let url = get(opt, 'url')
     if (!isestr(url)) {
         url = './db.json'
+    }
+    else {
+        chkOptStr('url', url)
     }
 
     //db
@@ -78,11 +103,17 @@ function WOrmLowdb(opt = {}) {
     if (!isestr(db)) {
         db = 'worm'
     }
+    else {
+        chkOptStr('db', db)
+    }
 
     //cl
     let cl = get(opt, 'cl')
     if (!isestr(cl)) {
         cl = 'test'
+    }
+    else {
+        chkOptStr('cl', cl)
     }
 
     //useCache
@@ -358,6 +389,45 @@ function WOrmLowdb(opt = {}) {
         return data
     }
 
+    //chkPk, 主鍵之檢核, 回傳null(合格)或固定原因字串(不回顯值), 供寫入前(procWellFormed)、selectByPk與del共用:
+    //空字串非有效主鍵(同isestr); 其餘依wsemi之chkOrmStr: 非字串、含NUL(主鍵併入NUL, 與find同標準)、含孤立代理字元
+    //(lowdb以JSON存檔可保真, 但全系列一律拒收, 使同一應用更換後端時資料行為一致; 孤立代理字元之主鍵於其他後端會被改寫為U+FFFD而命中他筆)
+    let chkPk = (id) => {
+        if (id === '') {
+            return 'string is empty'
+        }
+        return chkOrmStr(id)
+    }
+
+    //getWellFormedMsg, 檢核第k筆之主鍵與資料, 回傳null(合格)或錯誤訊息; 訊息為固定詞彙而不回顯值, 路徑含批次索引(單一物件呼叫之索引為data[0]),
+    //與wsemi之cvOrmFind及案例表同詞彙:
+    //  invalid id: <原因> at [data[<k>].id]
+    //  invalid data: <原因> at [data[<k>].<路徑>]
+    //1.作用於procPk之後(已cloneDeep並補主鍵)之複本, 且其後之判定、寫入皆只用該複本, 檢查之值即使用之值; 自有存取器於cloneDeep時已轉為資料屬性
+    //2.同一筆主鍵先於資料; 資料(chkOrmData)檢鍵名與字串值(含巢狀物件、陣列、Map、Set、Error與RegExp之文字)之孤立代理字元, 值與鍵名之NUL不拒
+    //3.不隨autoGenPk改變: 如實存放性檢核, 非格式偏好
+    let getWellFormedMsg = (v, k) => {
+        let r = chkPk(v.id)
+        if (r !== null) {
+            return `invalid id: ${r} at [data[${k}].id]`
+        }
+        let e = chkOrmData(v, { root: `data[${k}]` })
+        if (e !== null) {
+            return `invalid data: ${e.reason} at [${e.path}]`
+        }
+        return null
+    }
+
+    //procWellFormed, 供insert與insertBulk於任何寫入之前檢核各筆: 任一筆不合格即拋出為整批性錯誤(以索引最小者為準)而不寫入任何一筆
+    let procWellFormed = (data) => {
+        each(data, function(v, k) {
+            let msg = getWellFormedMsg(v, k)
+            if (msg !== null) {
+                throw new Error(msg)
+            }
+        })
+    }
+
     //readData, 讀取資料庫檔案並取得本資料表之陣列
     //註: 使用lowdb.read()初始化後須馬上檢測, 若無key則須先創建空陣列
     let readData = async() => {
@@ -382,14 +452,15 @@ function WOrmLowdb(opt = {}) {
         }
     }
 
-    //getKpPk, 由數據陣列建立[主鍵值 => {k, v}]之對照表, k為所在索引
+    //getKpPk, 由數據陣列建立[主鍵值 => {k, v}]之Map, k為所在索引
     //僅收錄具有效主鍵值者, 令資料表內若有主鍵值無效之殘留數據不致被誤配為命中
+    //須用Map而非一般物件加in(haskey)或lodash get: 主鍵為constructor、toString、__proto__等Object.prototype成員名時, 走原型鏈恆有值(帳本R-PKMAP-01)
     let getKpPk = (ltdt) => {
-        let kp = {}
+        let kp = new Map()
         each(ltdt, (v, k) => {
             let id = get(v, 'id')
             if (isestr(id)) {
-                kp[id] = { k, v }
+                kp.set(id, { k, v })
             }
         })
         return kp
@@ -501,8 +572,8 @@ function WOrmLowdb(opt = {}) {
         let res = null
         try {
 
-            //check
-            if (!isestr(pk)) {
+            //check, 含NUL或孤立代理字元之主鍵亦屬無效(chkPk): 此類主鍵不可能由本套件寫入(寫入側已拒收), 回null而不reject, 不發出error事件
+            if (!isestr(pk) || chkPk(pk) !== null) {
                 //未給有效主鍵值視為查無數據
                 return null
             }
@@ -512,7 +583,7 @@ function WOrmLowdb(opt = {}) {
 
             //查找資料表內pk, 判定基準與insert、insertBulk、save、del內對既有數據之認定一致(皆以id之字串值比對)
             let kp = getKpPk(ltdt)
-            let r = get(kp, pk, null)
+            let r = kp.get(pk)
 
             //check
             if (iseobj(r)) {
@@ -598,6 +669,10 @@ function WOrmLowdb(opt = {}) {
             //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01)
             chkDataDate(data)
 
+            //check well-formed, 主鍵(併入NUL)與資料之孤立代理字元, 須於任何讀取與寫入之前完成, 只用上方cloneDeep之複本;
+            //置於Date檢核之後: 兩者並存時先報Date(既有行為與測試不變)
+            procWellFormed(data)
+
             //read
             let arrOld = await readData()
 
@@ -611,14 +686,14 @@ function WOrmLowdb(opt = {}) {
             each(data, (v) => {
 
                 //check
-                if (!haskey(kp, v.id)) {
+                if (!kp.has(v.id)) {
                     //未存在v.id
 
                     //push
                     ltpush.push(v)
 
                     //update, 須同步更新kp, 否則同批含重複主鍵者會全數寫入而出現重複主鍵
-                    kp[v.id] = { k: -1, v }
+                    kp.set(v.id, { k: -1, v })
 
                     ltdone.push(true)
                 }
@@ -726,6 +801,9 @@ function WOrmLowdb(opt = {}) {
             //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01)
             chkDataDate(data)
 
+            //check well-formed, 同insert(置於Date檢核之後)
+            procWellFormed(data)
+
             //read
             let arrOld = await readData()
 
@@ -739,11 +817,11 @@ function WOrmLowdb(opt = {}) {
             //同批含重複主鍵者亦於此被偵測為衝突(kp隨檢查同步更新)
             let pkConflict = null
             each(data, (v) => {
-                if (haskey(kp, v.id)) {
+                if (kp.has(v.id)) {
                     pkConflict = v.id
                     return false //中止each
                 }
-                kp[v.id] = { k: -1, v }
+                kp.set(v.id, { k: -1, v })
             })
 
             //check
@@ -832,6 +910,12 @@ function WOrmLowdb(opt = {}) {
             //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01); 合併與覆寫路徑之Date皆來自此複本
             chkDataDate(data)
 
+            //msgs, 各筆主鍵(併入NUL)與資料之良構檢核結果(合格者為null), 於任何讀取與寫入之前完成, 只用上方cloneDeep之複本;
+            //save為逐筆函數, 不合格者僅該筆失敗(ok為0並附err), 同批其他筆照常處理
+            let msgs = map(data, function(v, k) {
+                return getWellFormedMsg(v, k)
+            })
+
             //read
             let arrOld = await readData()
 
@@ -841,17 +925,22 @@ function WOrmLowdb(opt = {}) {
             //kp
             let kp = getKpPk(arrNew)
 
-            //pmSeries
+            //pmSeries, 回呼之第二參數為批次索引
             let b = false
-            res = await pmSeries(data, async(v) => {
+            res = await pmSeries(data, async(v, k) => {
 
                 //rest
                 let rest = null
 
                 try {
 
+                    //不合格者以該筆失敗回報(下方catch組成ok為0之結果), 先於該筆之任何讀取與寫入
+                    if (msgs[k] !== null) {
+                        throw new Error(msgs[k])
+                    }
+
                     //查找資料表內v.id
-                    let r = get(kp, v.id, null)
+                    let r = kp.get(v.id)
 
                     //existed
                     let existed = iseobj(r)
@@ -863,8 +952,17 @@ function WOrmLowdb(opt = {}) {
                         //vv, 現值
                         let vv = r.v
 
+                        //vIn, 以merge(lodash)讀取v一次所得之純資料物件, 檢核之並以之合併: merge以keysIn取值, 會讀到繼承之可列舉存取器(類別實例之原型上),
+                        //其每次讀取可回不同值, 上方對複本之檢核與此處合併所讀者未必相同, 故檢查之值即合併之值; 不合格者該筆ok為0(尚未寫入arrNew)
+                        //只檢核來自輸入者(vIn), 不檢核現值vv之既有內容: 舊資料之孤立代理字元不遷移(lowdb保真而留存), 不得使對該列之無關更新被拒
+                        let vIn = merge({}, v)
+                        let eIn = chkOrmData(vIn, { root: `data[${k}]` })
+                        if (eIn !== null) {
+                            throw new Error(`invalid data: ${eIn.reason} at [${eIn.path}]`)
+                        }
+
                         //vm, 合併後之結果, 另建新物件以免污染原數據
-                        let vm = merge({}, vv, v)
+                        let vm = merge({}, vv, vIn)
 
                         //判定基準為[合併後結果與現值相同], 而非[待寫入物件與現值全等],
                         //令nModified忠實反映是否真的寫入, 僅給部份欄位且值皆相同者不應回報已修改
@@ -882,7 +980,7 @@ function WOrmLowdb(opt = {}) {
 
                             //update
                             arrNew[r.k] = vm
-                            kp[v.id] = { k: r.k, v: vm }
+                            kp.set(v.id, { k: r.k, v: vm })
 
                             b = true
 
@@ -902,7 +1000,7 @@ function WOrmLowdb(opt = {}) {
                             //push
                             let k = size(arrNew)
                             arrNew.push(v)
-                            kp[v.id] = { k, v }
+                            kp.set(v.id, { k, v })
 
                             b = true
 
@@ -1028,10 +1126,10 @@ function WOrmLowdb(opt = {}) {
             //kp
             let kp = getKpPk(arrOld)
 
-            //pmSeries
+            //pmSeries, 回呼之第二參數為批次索引
             let kpDel = {}
             let b = false
-            res = await pmSeries(data, async(v) => {
+            res = await pmSeries(data, async(v, k) => {
 
                 //rest
                 let rest = null
@@ -1039,24 +1137,27 @@ function WOrmLowdb(opt = {}) {
                 try {
 
                     //id
-                    let id = get(v, 'id', '')
+                    let id = get(v, 'id')
+
+                    //check, 主鍵之檢核(chkPk): 非字串、空字串、含NUL、含孤立代理字元者皆無效
+                    let msgPk = chkPk(id)
 
                     //check
-                    if (!isestr(id)) {
+                    if (msgPk !== null) {
                         //未給有效v.id視為該筆數據有問題而無法處理, 以ok為0並附err回報,
-                        //與[已給v.id但查無數據]之ok為1有別, 二者須可由ok分辨
+                        //與[已給v.id但查無數據]之ok為1有別, 二者須可由ok分辨; 訊息為固定詞彙, 含批次索引而不回顯值
                         //註: 亦不可將無效主鍵送進查詢條件, 故於此直接定案
                         rest = {
                             n: 0,
                             nDeleted: 0,
                             ok: 0,
-                            err: `can not delete by invalid id[${id}]`,
+                            err: `invalid id: ${msgPk} at [data[${k}].id]`,
                         }
                     }
                     else {
 
                         //查找資料表內v.id
-                        let r = get(kp, id, null)
+                        let r = kp.get(id)
 
                         //check
                         if (iseobj(r)) {
@@ -1066,7 +1167,7 @@ function WOrmLowdb(opt = {}) {
                             kpDel[r.k] = true
 
                             //update, 須同步移除, 否則同批重複主鍵者會重複計入nDeleted
-                            delete kp[id]
+                            kp.delete(id)
 
                             b = true
 

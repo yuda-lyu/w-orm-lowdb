@@ -94,13 +94,24 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
 <p>註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵。
 註: 本套件之寫入為[整檔讀出、記憶體修改、整檔寫回]，其原子性由行程內之序列化佇列提供，
 故僅單一行程內併發成立，跨行程併發不成立，詳見README之併發保證宣告。
-註: 數據以JSON存檔，Date存入後為ISO字串；insert、insertBulk與save寫入之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject，詳見各函數與README。</p></li></ul></dd>
+註: 數據以JSON存檔，Date存入後為ISO字串；insert、insertBulk與save寫入之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject，詳見各函數與README。</p>
+<p>字串良構(w-orm系列規則，wsemi之chkOrmStr與chkOrmData): lowdb以JSON檔存放，孤立代理字元(String.prototype.isWellFormed()為false)可保真，本身不致相撞，
+惟系列其他後端(UTF-8、BSON儲存)會改寫為U+FFFD，為使更換後端時資料行為一致，全系列一律於任何讀取與寫入之前拒收：</p>
+<ol>
+<li>主鍵(id)不得含孤立代理字元與NUL，不隨autoGenPk改變；</li>
+<li>寫入資料(insert、insertBulk、save)之字串值與鍵名(含巢狀物件、陣列元素、Map與Set之項目、Error與RegExp之文字)不得含孤立代理字元，值與鍵名之NUL不拒；</li>
+<li>opt.url、opt.db、opt.cl含孤立代理字元者於建構時throw，訊息為invalid opt.&lt;名&gt;: string contains lone surrogate。
+處置與無效主鍵同形：insert與insertBulk整批reject而不寫入任何一筆(error事件先於reject)，save與del該筆ok為0並附err(同批其他筆照常)，selectByPk回null；
+訊息為固定詞彙而不回顯值：invalid id: 原因 at [data[k].id]、invalid data: 原因 at [data[k].路徑](k為批次索引，單一物件為0；不合格之鍵名以<invalid key>標示)，
+原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
+U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。</li>
+</ol></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line65">line 65</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line77">line 77</a>
     </li></ul></dd>
     
 
@@ -272,7 +283,7 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
                 </td>
             
 
-            <td class="description last"><p>輸入資料庫位置字串，預設'./db.json'</p></td>
+            <td class="description last"><p>輸入資料庫位置字串，預設'./db.json'；含孤立代理字元者建構時throw</p></td>
         </tr>
 
     
@@ -312,7 +323,7 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
                 </td>
             
 
-            <td class="description last"><p>輸入使用資料庫名稱字串，預設'worm'</p></td>
+            <td class="description last"><p>輸入使用資料庫名稱字串，預設'worm'；含孤立代理字元者建構時throw</p></td>
         </tr>
 
     
@@ -352,7 +363,7 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
                 </td>
             
 
-            <td class="description last"><p>輸入使用資料表名稱字串，預設'test'</p></td>
+            <td class="description last"><p>輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw</p></td>
         </tr>
 
     
@@ -554,7 +565,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1188">line 1188</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1289">line 1289</a>
     </li></ul></dd>
     
 
@@ -732,7 +743,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1005">line 1005</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1103">line 1103</a>
     </li></ul></dd>
     
 
@@ -898,7 +909,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line699">line 699</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line774">line 774</a>
     </li></ul></dd>
     
 
@@ -1063,7 +1074,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line561">line 561</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line632">line 632</a>
     </li></ul></dd>
     
 
@@ -1352,7 +1363,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line806">line 806</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line884">line 884</a>
     </li></ul></dd>
     
 
@@ -1642,7 +1653,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line497">line 497</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line568">line 568</a>
     </li></ul></dd>
     
 
@@ -1802,7 +1813,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line429">line 429</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line500">line 500</a>
     </li></ul></dd>
     
 
@@ -1987,7 +1998,7 @@ select亦納入序列化，令其不致與寫入之整檔替換交錯。</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line133">line 133</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line164">line 164</a>
     </li></ul></dd>
     
 
@@ -2071,7 +2082,7 @@ select亦納入序列化，令其不致與寫入之整檔替換交錯。</p>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Tue Oct 20 2026 12:54:27 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Wed Oct 21 2026 00:43:38 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
