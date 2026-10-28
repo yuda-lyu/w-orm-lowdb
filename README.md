@@ -91,6 +91,41 @@ JavaScript 字串可含孤立代理字元(lone surrogate，即成對代理被拆
 
 已知限制：`String` 包裝物件(`new String('...')`)僅檢核其字串值、不解包；`toJSON` 或自訂序列化之輸出不檢核。
 
+### 診斷輸出：`opt.logDetail` 與 `opt.funLog` (Diagnostic output)
+
+本套件唯一會寫 console 之情形，是 `change` 或 `error` 事件之**訂閱函數自行拋錯**(拋錯不影響該次操作之結果，只輸出一則診斷)。所有輸出皆經**單一出口**(`src/getDiag.mjs`)。服務之 console 常被日誌系統收集，而訂閱函數拋出之錯誤常夾帶它剛處理的資料(主鍵、使用者識別、欄位值)與堆疊，故預設只輸出固定標籤與不含個資之摘要：
+
+| 項目 | 預設 | 說明 |
+|---|---|---|
+| 訂閱函數拋錯時 | `change handler threw { mode: 'insert', errType: 'Error' }` 或 `error handler threw { mode: 'select', errType: 'Error' }` | 摘要只含操作別(`mode`)、錯誤類別名稱(`errType`，限程式識別字樣式，否則為 `Error`；拋出之值非 `Error` 者為 `string`、`object`、`null` 等型別，`Proxy` 為 `Proxy`)與機器代碼(`errCode`，只取自 `Error` 之自有屬性 `code`，且限 `ENOENT`、`EACCES`、`EAI_AGAIN`、`E2BIG`、`ERR_xxx` 一類之字串；整數、`E` 後接數字者〔如 `E123456789`〕、一般物件之 `code` 一律不列，有才列)；**不含**資料值、`id`、訊息文字與堆疊。`mode`、`errType`、`errCode` 亦經資料庫檔案位置之遮罩 |
+| `opt.logDetail` | `false` | 須為 `true` 才生效，其餘值忽略。`true` 時還原舊版輸出：以 `console.log` 輸出訂閱函數拋出之值的**遮罩拷貝**(見下)，不加標籤；`Error`(含 `TypeError`、`RangeError`、自訂 `Error` 類別、`cause`)與純值之輸出文字與舊版 `console.log(值)` 逐字相同，非 `Error` 之類別實例等例外見下。可能含資料值與 `id`，**僅供除錯** |
+| `opt.funLog` | 無 | 函數 `(label, safe, detail)`，須為函數才生效，其餘值忽略。給予時診斷輸出**只**交給它、不寫 console：`label` 為固定標籤，`safe` 為上述摘要，`detail` 為完整細節(訂閱函數拋出之值之**遮罩拷貝**)，可由使用端遮罩後轉送至自己的日誌。`funLog` 拋錯，或回傳 reject 之 promise，皆不影響操作 |
+
+**資料庫檔案位置於任何輸出管道一律遮罩**：本套件無帳號與密碼，`opt.url`(資料庫檔案路徑)即連線字串。`opt.url` 之原值、其絕對路徑、`path.normalize` 後之相對路徑、lowdb 底層寫檔所用之暫存檔路徑(`<目錄>/.<檔名>.tmp`，寫檔失敗之系統錯誤訊息會帶它)，及其斜線與反斜線互換、磁碟機代號大小寫互換、UNC 命名空間(`\\?\UNC\…`)、JSON 跳脫、`encodeURI`(`file:///` 網址之路徑段)、`encodeURIComponent` 之形式，出現在 `logDetail` 之輸出或 `funLog` 之 `detail`(含字串值、屬性鍵、Symbol 描述與值、巢狀物件、陣列之附加屬性、`cause`、包裝物件)時，皆以 `***` 取代；`opt.url` 為 4 位以上純數字時，同值之數字亦遮罩。少於 3 個字元之 `opt.url` 原值不單獨遮罩(會吞掉無關文字)，其絕對路徑仍遮罩；路徑大小寫其餘部分之改寫、`8.3` 短檔名不在遮罩範圍。建構函式之錯誤訊息(`invalid opt.url: string contains lone surrogate` 等)本為固定詞彙，不回顯 `opt.url`。
+
+`detail` 為遮罩拷貝，大小有界：純物件與陣列、`Error`(含 `message`、`stack`、`cause`、自有屬性與類別名稱)、`Date`、包裝物件(`new String` 等，取內部槽之原始值後遮罩)會複製；深度超過 6 層者以 `'[Truncated]'` 代替，節點與自有鍵合計超過 2000 後其餘鍵不複製(物件附鍵 `'[Truncated]'`，值為未複製之鍵數；陣列截短並以最後一個元素 `'[Truncated]'` 標示)；函數、`Proxy`、二進位資料、`Map`/`Set`/`RegExp`/`Promise`/`WeakMap`/`WeakSet` 等內建物件與存取器以標記字串(`'[Function]'`、`'[Proxy]'`、`'[Binary 12 bytes]'`、`'[Object]'`、`'[Getter/Setter]'`)代替。複製過程不執行你的程式(不呼叫 getter 與自訂 `inspect`，不觸發 `Proxy` 的 trap；`Error` 之 `stack` 於 `name`、`message` 為存取器、物件或 `Symbol` 時不讀取；唯一例外：若你的程式設定了全域 `Error.prepareStackTrace`〔如 `source-map-support`〕，V8 於首次格式化該錯誤的 `stack` 時會呼叫它，與一般讀取錯誤堆疊相同)，副本不沿用你的原型：非 `Error` 之類別實例成為普通物件(`Foo { a: 1 }` 變 `{ a: 1 }`)，原型為 `null` 之錯誤成為一般 `Error`(保有訊息與堆疊，不標示 `null prototype`)，與舊版 `console.log(值)` 之文字不同。
+
+```alias
+// 預設：console 只有標籤與摘要
+let w = WOrmLowdb({ url: './db.json' })
+w.on('change', () => { throw new Error('handler failed for user a@b.c') })
+// console: change handler threw { mode: 'insert', errType: 'Error' }
+
+// 除錯：還原舊版輸出(Error: handler failed for user a@b.c 與堆疊)，資料庫檔案位置仍遮罩
+let wd = WOrmLowdb({ url: './db.json', logDetail: true })
+
+// 轉送至自己的日誌：細節請於送出前自行遮罩
+let wf = WOrmLowdb({
+    url: './db.json',
+    funLog: (label, safe, detail) => {
+        logger.info({ label, safe }) // safe 不含個資
+        // detail 含完整原文，送出前請自行遮罩
+    },
+})
+```
+
+不在範圍：底層 `lowdb`、`mingo` 不自行輸出日誌；Node 本身之警告(如 `MaxListenersExceededWarning`)不經本出口。摘要之 `errType`、`errCode` 為程式識別字與機器代碼，不是資料，但樣式白名單無法證明其不含個資，請勿以個資命名自訂錯誤類別。
+
 ### 破壞性變更 (Breaking changes)
 
 原本被接受或被靜默放行之條件，現改為 reject，不設過渡期。
@@ -102,6 +137,7 @@ JavaScript 字串可含孤立代理字元(lone surrogate，即成對代理被拆
 - 改為 reject(寫入 Date 範圍，1.0.34 起)：`insert`、`insertBulk`、`save` 寫入之數據內任何深度之 `Date` 年份小於 0 或大於 9999(如以 `new Date(8.64e15)` 作「永不過期」哨兵)，原本照存為 `+yyyyyy-…`、`-yyyyyy-…` 字串(其後會被 `{ t: { $lt: 現在 } }` 因字典序命中而遭 `delAll` 刪除)，現整批 reject，訊息為 `invalid data: Date year is out of range 0000-9999 at [<路徑>]`；請改用 `null` 或 `new Date('9999-12-31T23:59:59.999Z')`。既有資料不遷移，仍有字典序風險，請自行清理或改寫(見上方「寫入數據之 Date」)。
 - 錯誤訊息為 `invalid find: <原因> at [<路徑>]`；原本由 `mingo` 拋出錯誤者，現統一為此訊息。
 - 改為 reject(字串良構)：主鍵含孤立代理字元或 NUL；寫入資料之字串值或鍵名含孤立代理字元；`opt.url`、`opt.db`、`opt.cl` 含孤立代理字元(建構時 throw)。原本 lowdb 以 JSON 保真而照存，現為系列一致而拒收，見上節「字串良構」。`del` 未給有效 `id` 之 `err` 由 `can not delete by invalid id[<值>]` 改為 `invalid id: <原因> at [data[<k>].id]`(不回顯值)。
+- 變更(診斷輸出)：`change` 或 `error` 事件之訂閱函數拋錯時，console 輸出由原本的 `console.log(拋出之值)`(整個錯誤含訊息與堆疊，可能夾帶資料值與 `id`)改為 `change handler threw { mode, errType }`(`error handler threw` 同)。**要看原文：加 `logDetail: true`(輸出為遮罩拷貝，`Error` 與純值之文字與舊版相同；資料庫檔案位置以 `***` 取代，限制見上節)，或由 `funLog` 取得。** 只有輸出變動，各操作之 resolve/reject 內容、`change` 與 `error` 事件之參數及發出時機皆不變。新增選項 `opt.logDetail`、`opt.funLog`，見上節「診斷輸出」。
 - 修正(主鍵為 `Object.prototype` 成員名)：主鍵為 `constructor`、`toString`、`valueOf`、`hasOwnProperty`、`__proto__` 等時，原本 `insert` 回 `{ n: 1, nInserted: 0, ok: 1 }` 而靜默不寫入，`insertBulk` 誤報 `can not insertBulk by existed id[...]`，以 `__proto__` 為主鍵之紀錄其欄位名(及 `k`、`v`)還會被誤認為其他主鍵(同批之後筆被判已存在、`del` 誤報已刪)；現主鍵存在與否以 `Map` 判定，與一般字串主鍵行為相同。
 
 ## Documentation

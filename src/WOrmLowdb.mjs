@@ -22,6 +22,7 @@ import haskey from 'wsemi/src/haskey.mjs'
 import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
 import chkOrmStr from 'wsemi/src/chkOrmStr.mjs'
 import chkOrmData from 'wsemi/src/chkOrmData.mjs'
+import { getOptLog, getSecrets, getDiag, getBriefErr } from './getDiag.mjs'
 
 
 //kpGqueue, 以資料庫檔案路徑為鍵之全域序列化佇列, 詳見下方serialize說明
@@ -65,6 +66,14 @@ let kpGqueue = {}
  * 原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
  * U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。
  *
+ * 診斷輸出(w-orm系列規則，選項名稱與語意同w-serv-orm、w-orm-reladb): 本套件唯一會寫console之情形，為change或error事件之訂閱函數自行拋錯(拋錯不影響本次操作之結果，僅輸出診斷)，
+ * 一律經單一出口(src/getDiag.mjs)。預設只輸出固定標籤與不含個資之摘要，例如change handler threw { mode: 'insert', errType: 'Error' }
+ * (操作別、錯誤類別名稱與機器代碼如ENOENT)，不含資料值、id、訂閱函數拋出之錯誤原文與堆疊。
+ * 1. opt.logDetail為true時還原舊版輸出(console.log(訂閱函數拋出之值))，可能含資料值與id，僅供除錯；
+ * 2. opt.funLog(label, safe, detail)為函數時，診斷輸出只交給它而不寫console，safe為不含個資之摘要，detail為完整細節(遮罩拷貝，有深度與節點數上限，不沿用原型、不執行使用端程式)，供使用端遮罩或轉送；
+ * 3. 資料庫檔案位置(opt.url與其絕對路徑，本套件之連線字串)於任何輸出管道(預設、logDetail、funLog之細節)一律以***取代；
+ * 4. 選項型別錯誤者忽略並用預設，與useCache、autoGenPk一致；各操作之resolve/reject內容與事件payload及時機皆不受診斷輸出影響，funLog拋錯或回傳reject之promise亦不影響操作。
+ *
  * @class
  * @param {Object} [opt={}] 輸入設定物件，預設{}
  * @param {String} [opt.url='./db.json'] 輸入資料庫位置字串，預設'./db.json'；含孤立代理字元者建構時throw
@@ -72,6 +81,8 @@ let kpGqueue = {}
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw
  * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
  * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject
+ * @param {Boolean} [opt.logDetail=false] 輸入診斷輸出是否還原為含資料值與錯誤原文之完整細節(僅供除錯)，須為true才生效，其餘值忽略，預設false；資料庫檔案位置仍以***遮罩
+ * @param {Function} [opt.funLog=null] 輸入診斷輸出函數(label, safe, detail)，須為函數才生效，其餘值忽略，預設無；給予時診斷輸出只交給它而不寫console，safe為不含個資之摘要(可能為undefined)，detail為完整細節之遮罩拷貝(無細節時不傳此引數)，其拋錯或回傳reject之promise皆不影響操作
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
  */
 function WOrmLowdb(opt = {}) {
@@ -129,6 +140,10 @@ function WOrmLowdb(opt = {}) {
         autoGenPk = true
     }
 
+    //optLog, 診斷輸出之設定快照{ logDetail, funLog }(帳本R-DIAG-01), 其後各路徑共用此快照, 不再讀取使用端的opt;
+    //logDetail不為true、funLog不為函數(含讀取拋錯)者忽略並用預設, 與useCache、autoGenPk型別錯誤即用預設一致
+    let optLog = getOptLog(opt)
+
     //key
     let key = `${db}:${cl}`
 
@@ -143,6 +158,13 @@ function WOrmLowdb(opt = {}) {
 
     //gkey, 基於url也就是以檔案路徑為準, 同檔案路徑須使用同一佇列
     let gkey = path.resolve(url)
+
+    //diag, 診斷輸出之單一出口(帳本R-DIAG-01), src內除getDiag.mjs外不得直接呼叫console;
+    //預設只輸出固定標籤與不含個資之摘要, logDetail還原細節輸出, funLog取代console收完整細節;
+    //資料庫檔案位置(本套件之連線字串)於任何輸出(含細節)一律以***遮罩: opt.url原樣、絕對路徑、path.normalize後之相對路徑,
+    //以及lowdb底層steno寫檔所用之暫存檔(<目錄>/.<檔名>.tmp, 寫檔失敗之系統錯誤訊息會帶它; 路徑經path.join正規化, 故相對與絕對各取一個)
+    let tmpOf = (f) => path.join(path.dirname(f), `.${path.basename(f)}.tmp`)
+    let diag = getDiag(optLog, getSecrets([url, gkey, path.normalize(url), tmpOf(url), tmpOf(gkey)]))
 
     //佇列初始化, 同一資料庫檔案之全部操作一律序列化
     if (!haskey(kpGqueue, gkey)) {
@@ -332,13 +354,13 @@ function WOrmLowdb(opt = {}) {
     }
 
     //emitChange, 資料實際異動成功後發出, 事件僅為附加通知不承擔回傳義務
-    //一律包try/catch, 令訂閱函數自身拋錯不影響本次操作之結果
+    //一律包try/catch, 令訂閱函數自身拋錯不影響本次操作之結果; 拋出之值經diag輸出(預設只列操作別與錯誤類別/代碼, 原文為細節)
     let emitChange = (mode, data, res) => {
         try {
             ee.emit('change', mode, data, res)
         }
         catch (err) {
-            console.log(err)
+            diag('change handler threw', { mode, ...getBriefErr(err) }, () => err, true)
         }
     }
 
@@ -356,7 +378,7 @@ function WOrmLowdb(opt = {}) {
             ee.emit('error', mode, data, msg)
         }
         catch (errEmit) {
-            console.log(errEmit)
+            diag('error handler threw', { mode, ...getBriefErr(errEmit) }, () => errEmit, true)
         }
     }
 

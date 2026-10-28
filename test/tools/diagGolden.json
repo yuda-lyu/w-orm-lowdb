@@ -1,0 +1,2604 @@
+{
+  "plain": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "can not insertBulk by existed id[a1]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "id": "a1",
+            "name": "n1y",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "id": "a1",
+            "name": "n1y",
+            "value": 1
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a7",
+            "name": "n7"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a4",
+            "name": "n4"
+          },
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "err": "invalid id: string contains lone surrogate at [data[0].id]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a1",
+            "name": "n1",
+            "value": 1
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a1",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a7",
+            "name": "n7"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "a1",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[a1]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a4",
+            "name": "n4"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "a1",
+            "name": "n1x"
+          },
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "a1",
+            "name": "n1y"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "a8",
+            "t": "-271821-04-20T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "a6",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "a\ud800b",
+            "name": "x"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a3"
+          },
+          {
+            "id": ""
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      ]
+    ],
+    "seq": [
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        0
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        1
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        2
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        3
+      ],
+      [
+        "ev",
+        "error",
+        "insertBulk"
+      ],
+      [
+        "res",
+        4
+      ],
+      [
+        "ev",
+        "change",
+        "insertBulk"
+      ],
+      [
+        "res",
+        5
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "ev",
+        "change",
+        "save"
+      ],
+      [
+        "res",
+        6
+      ],
+      [
+        "ev",
+        "change",
+        "save"
+      ],
+      [
+        "res",
+        7
+      ],
+      [
+        "ev",
+        "error",
+        "save"
+      ],
+      [
+        "res",
+        8
+      ],
+      [
+        "res",
+        9
+      ],
+      [
+        "ev",
+        "error",
+        "select"
+      ],
+      [
+        "res",
+        10
+      ],
+      [
+        "res",
+        11
+      ],
+      [
+        "res",
+        12
+      ],
+      [
+        "res",
+        13
+      ],
+      [
+        "res",
+        14
+      ],
+      [
+        "ev",
+        "error",
+        "insert"
+      ],
+      [
+        "res",
+        15
+      ],
+      [
+        "ev",
+        "error",
+        "insert"
+      ],
+      [
+        "res",
+        16
+      ],
+      [
+        "ev",
+        "change",
+        "del"
+      ],
+      [
+        "res",
+        17
+      ],
+      [
+        "ev",
+        "error",
+        "del"
+      ],
+      [
+        "ev",
+        "change",
+        "del"
+      ],
+      [
+        "res",
+        18
+      ],
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        19
+      ],
+      [
+        "ev",
+        "error",
+        "delAll"
+      ],
+      [
+        "res",
+        20
+      ],
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        21
+      ]
+    ]
+  },
+  "bad": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "can not insertBulk by existed id[a1]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "id": "a1",
+            "name": "n1y",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "id": "a1",
+            "name": "n1y",
+            "value": 1
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a7",
+            "name": "n7"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a4",
+            "name": "n4"
+          },
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "err": "invalid id: string contains lone surrogate at [data[0].id]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a1",
+            "name": "n1",
+            "value": 1
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a1",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a7",
+            "name": "n7"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "a1",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[a1]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a4",
+            "name": "n4"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "a1",
+            "name": "n1x"
+          },
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "a1",
+            "name": "n1y"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "a8",
+            "t": "-271821-04-20T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "a6",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "a\ud800b",
+            "name": "x"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a3"
+          },
+          {
+            "id": ""
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      ]
+    ],
+    "seq": [
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        0
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        1
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        2
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        3
+      ],
+      [
+        "ev",
+        "error",
+        "insertBulk"
+      ],
+      [
+        "res",
+        4
+      ],
+      [
+        "ev",
+        "change",
+        "insertBulk"
+      ],
+      [
+        "res",
+        5
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "ev",
+        "change",
+        "save"
+      ],
+      [
+        "res",
+        6
+      ],
+      [
+        "ev",
+        "change",
+        "save"
+      ],
+      [
+        "res",
+        7
+      ],
+      [
+        "ev",
+        "error",
+        "save"
+      ],
+      [
+        "res",
+        8
+      ],
+      [
+        "res",
+        9
+      ],
+      [
+        "ev",
+        "error",
+        "select"
+      ],
+      [
+        "res",
+        10
+      ],
+      [
+        "res",
+        11
+      ],
+      [
+        "res",
+        12
+      ],
+      [
+        "res",
+        13
+      ],
+      [
+        "res",
+        14
+      ],
+      [
+        "ev",
+        "error",
+        "insert"
+      ],
+      [
+        "res",
+        15
+      ],
+      [
+        "ev",
+        "error",
+        "insert"
+      ],
+      [
+        "res",
+        16
+      ],
+      [
+        "ev",
+        "change",
+        "del"
+      ],
+      [
+        "res",
+        17
+      ],
+      [
+        "ev",
+        "error",
+        "del"
+      ],
+      [
+        "ev",
+        "change",
+        "del"
+      ],
+      [
+        "res",
+        18
+      ],
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        19
+      ],
+      [
+        "ev",
+        "error",
+        "delAll"
+      ],
+      [
+        "res",
+        20
+      ],
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        21
+      ]
+    ]
+  },
+  "badConsoleFirstLines": [
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw",
+    "Error: listener u-secret-001@example.com S3cretPw"
+  ],
+  "badConsoleCount": 19,
+  "cache": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "can not insertBulk by existed id[a1]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "id": "a1",
+            "name": "n1y",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "id": "a1",
+            "name": "n1y",
+            "value": 1
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a7",
+            "name": "n7"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a4",
+            "name": "n4"
+          },
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "err": "invalid id: string contains lone surrogate at [data[0].id]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a1",
+            "name": "n1",
+            "value": 1
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a1",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a7",
+            "name": "n7"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "a1",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[a1]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a4",
+            "name": "n4"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "a1",
+            "name": "n1x"
+          },
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "a1",
+            "name": "n1y"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "a8",
+            "t": "-271821-04-20T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "a6",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "a\ud800b",
+            "name": "x"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a3"
+          },
+          {
+            "id": ""
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      ]
+    ],
+    "seq": [
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        0
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        1
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        2
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        3
+      ],
+      [
+        "ev",
+        "error",
+        "insertBulk"
+      ],
+      [
+        "res",
+        4
+      ],
+      [
+        "ev",
+        "change",
+        "insertBulk"
+      ],
+      [
+        "res",
+        5
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "ev",
+        "change",
+        "save"
+      ],
+      [
+        "res",
+        6
+      ],
+      [
+        "ev",
+        "change",
+        "save"
+      ],
+      [
+        "res",
+        7
+      ],
+      [
+        "ev",
+        "error",
+        "save"
+      ],
+      [
+        "res",
+        8
+      ],
+      [
+        "res",
+        9
+      ],
+      [
+        "ev",
+        "error",
+        "select"
+      ],
+      [
+        "res",
+        10
+      ],
+      [
+        "res",
+        11
+      ],
+      [
+        "res",
+        12
+      ],
+      [
+        "res",
+        13
+      ],
+      [
+        "res",
+        14
+      ],
+      [
+        "ev",
+        "error",
+        "insert"
+      ],
+      [
+        "res",
+        15
+      ],
+      [
+        "ev",
+        "error",
+        "insert"
+      ],
+      [
+        "res",
+        16
+      ],
+      [
+        "ev",
+        "change",
+        "del"
+      ],
+      [
+        "res",
+        17
+      ],
+      [
+        "ev",
+        "error",
+        "del"
+      ],
+      [
+        "ev",
+        "change",
+        "del"
+      ],
+      [
+        "res",
+        18
+      ],
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        19
+      ],
+      [
+        "ev",
+        "error",
+        "delAll"
+      ],
+      [
+        "res",
+        20
+      ],
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        21
+      ]
+    ]
+  },
+  "noAutoPk": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "can not insertBulk by existed id[a1]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "id": "a1",
+            "name": "n1y",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "id": "a1",
+            "name": "n1y",
+            "value": 1
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a7",
+            "name": "n7"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a4",
+            "name": "n4"
+          },
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "err": "invalid id: string contains lone surrogate at [data[0].id]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]",
+        "name": "Error",
+        "isError": true
+      },
+      {
+        "ok": {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a1",
+            "name": "n1",
+            "value": 1
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a1",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a7",
+            "name": "n7"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "a1",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[a1]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a4",
+            "name": "n4"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "a1",
+            "name": "n1x"
+          },
+          {
+            "id": "a5",
+            "name": "n5"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "a1",
+            "name": "n1y"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "a8",
+            "t": "-271821-04-20T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "a6",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "a\ud800b",
+            "name": "x"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a3"
+          },
+          {
+            "id": ""
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      ]
+    ],
+    "seq": [
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        0
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        1
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        2
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "res",
+        3
+      ],
+      [
+        "ev",
+        "error",
+        "insertBulk"
+      ],
+      [
+        "res",
+        4
+      ],
+      [
+        "ev",
+        "change",
+        "insertBulk"
+      ],
+      [
+        "res",
+        5
+      ],
+      [
+        "ev",
+        "change",
+        "insert"
+      ],
+      [
+        "ev",
+        "change",
+        "save"
+      ],
+      [
+        "res",
+        6
+      ],
+      [
+        "ev",
+        "change",
+        "save"
+      ],
+      [
+        "res",
+        7
+      ],
+      [
+        "ev",
+        "error",
+        "save"
+      ],
+      [
+        "res",
+        8
+      ],
+      [
+        "res",
+        9
+      ],
+      [
+        "ev",
+        "error",
+        "select"
+      ],
+      [
+        "res",
+        10
+      ],
+      [
+        "res",
+        11
+      ],
+      [
+        "res",
+        12
+      ],
+      [
+        "res",
+        13
+      ],
+      [
+        "res",
+        14
+      ],
+      [
+        "ev",
+        "error",
+        "insert"
+      ],
+      [
+        "res",
+        15
+      ],
+      [
+        "ev",
+        "error",
+        "insert"
+      ],
+      [
+        "res",
+        16
+      ],
+      [
+        "ev",
+        "change",
+        "del"
+      ],
+      [
+        "res",
+        17
+      ],
+      [
+        "ev",
+        "error",
+        "del"
+      ],
+      [
+        "ev",
+        "change",
+        "del"
+      ],
+      [
+        "res",
+        18
+      ],
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        19
+      ],
+      [
+        "ev",
+        "error",
+        "delAll"
+      ],
+      [
+        "res",
+        20
+      ],
+      [
+        "ev",
+        "change",
+        "delAll"
+      ],
+      [
+        "res",
+        21
+      ]
+    ]
+  }
+}
