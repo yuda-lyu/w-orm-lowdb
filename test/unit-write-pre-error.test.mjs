@@ -15,6 +15,9 @@ describe('write-pre-error', function() {
     //MARK, 放進紀錄內之標記字串, 錯誤訊息不得回顯資料值(帳本規則2)
     let MARK = 'SECRET-MARK-9f3a'
 
+    //msgGetterHits, thrownValues內message存取器被執行之次數(fail-closed之副本不得執行它)
+    let msgGetterHits = 0
+
     //壞輸入之建構器: 皆使lodash cloneDeep或其前之iseobj/isearr同步拋錯
     let nullProtoDate = () => {
         let d = new Date(0)
@@ -123,11 +126,15 @@ describe('write-pre-error', function() {
             mk: () => {
                 return {
                     get message() {
+                        msgGetterHits++
                         throw new Error('message-getter-boom')
                     },
                 }
             },
             msg: 'unknown error',
+            //帳本R-DIAG-01(對外錯誤值經wsemi之diag.err, fail-closed): 自有存取器屬性無法在不執行使用端程式下檢查, 視為需處理:
+            //reject之值為副本(存取器以'[Getter/Setter]'取代, getter不被執行), error事件之訊息取自副本; 修改前為拋出者本身且事件訊息為unknown error(README〈Breaking changes〉)
+            failClosed: '[Getter/Setter]',
         },
         {
             key: 'object whose toString throws',
@@ -258,13 +265,23 @@ describe('write-pre-error', function() {
                 it(`thrown value (${tv.key}): rejects with the thrown value, one error event with string message "${tv.msg}", no change`, async function() {
                     //帳本規則1: 拋出值本身無法轉為字串者(null原型物件、message存取器拋錯、toString拋錯)亦須恰發出一次error事件(外審agy-opus F-01), reject之值為拋出者本身
                     let snapBefore = await snap(wo)
+                    msgGetterHits = 0
                     let thrown = tv.mk()
                     let d = [{ id: 'z1', secret: MARK, o: throwingGetter(thrown) }]
                     let out = await ob.run(() => entry.call(wo, d))
                     let ev = chkEv(out, entry)
-                    assert.strict.ok(Object.is(out.err, thrown), `${entry.fn} should reject with the thrown value itself`)
                     assert.strict.equal(typeof ev.err, 'string', `${entry.fn} error event message should be a string`)
-                    assert.strict.equal(ev.err, tv.msg, `${entry.fn} error event message`)
+                    if (tv.failClosed === undefined) {
+                        assert.strict.ok(Object.is(out.err, thrown), `${entry.fn} should reject with the thrown value itself`)
+                        assert.strict.equal(ev.err, tv.msg, `${entry.fn} error event message`)
+                    }
+                    else {
+                        assert.strict.ok(!Object.is(out.err, thrown), `${entry.fn} should reject with the fail-closed copy, not the thrown value`)
+                        assert.strict.equal(Object.getPrototypeOf(out.err), Object.prototype, `${entry.fn} copy keeps the built-in prototype`)
+                        assert.strict.equal(out.err.message, tv.failClosed, `${entry.fn} copy message`)
+                        assert.strict.equal(ev.err, tv.failClosed, `${entry.fn} error event message comes from the copy`)
+                        assert.strict.equal(msgGetterHits, 0, `${entry.fn} the caller's getter must not run`)
+                    }
                     assert.strict.ok(!ev.err.includes(MARK), `${entry.fn} message should not echo data values`)
                     chkData(ev, d, true, entry)
                     await chkAfter(snapBefore)

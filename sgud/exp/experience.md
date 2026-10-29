@@ -62,3 +62,16 @@
 - 本輪探針/變異/golden 產生腳本已備份於 `C:\opensrcOper\dnow\20261028054319\agent-out\lowdb-run01-evidence\tools\`(`genGolden.mjs`、`mutate.mjs`、`mutate2.mjs`、`probeFmt.mjs`、`buildDist.mjs`、`demo.mjs`、`runIn.mjs`、`listLinks.mjs`、`verifyRound2.mjs`),本機 `./tmp/` 已清除.
 - **Edit/Write 工具在本 repo 皆保持 CRLF**(`grep -c $'\r$'` 全檔等於行數);勿以腳本改檔造成混合換行.
 - 作業: 守門 hook 禁 `cd`、heredoc、`node -e` 寫檔;`node -e` 僅用於讀取(JSON 摘要).
+
+## 診斷與遮罩遷移至 wsemi 共用實作(第 161 項,mig-lowdb)(2026-10-29)
+
+- **迴避的坑:不得自行補遮罩邏輯**.遷移時唯一新增之判斷是「哪些 reject 是外來值、哪些是套件固定詞彙」,以 module 層 `WeakSet`(`mkErr` 登錄、`isOwnErr` 判定)解,不讀錯誤物件任何屬性(Proxy 亦安全);所有遮罩仍經 `diag.err`/`diag.mask`.catch 站點內同時會收到自身 `throw`(固定詞彙)與外來值,不能一律包 `diag.err`,否則含憑證樣式之鍵名/主鍵(如 `password=…`)會被誤遮.
+- **lowdb 之 reject 清單為空**:儲存路徑以 `paths` 宣告只入 detail 清單(Q3 對外錯誤值不遮路徑),故 `diag.err` 在本套件只靠樣式規則(網址帳密、`password=`/`token=`/`"password":` 鍵值對、Bearer)生效.測試探針須用樣式型憑證,不能用「登錄的密碼」(語料之 `ctx.sec.password` 無法登錄於 lowdb).
+- **真實外來錯誤源**(不 mock):① 損毀之資料庫檔使 `lowdb.read()` 拋 `SyntaxError`,V8 訊息在內容 ≤ 約 20 字元時整段帶出(`Unexpected token 'p', "password=… }" is not valid JSON`),可一次打到整批 7 站;**測試須先自檢前提**(`JSON.parse` 該內容之訊息含憑證),以免他版 Node 訊息格式改變而空轉.② 逐筆站:del 用「原型上可列舉存取器 `id`」(`get(v,'id')` 首讀即拋);save 用「合併階段才拋」之存取器——getter 內以 `new Error().stack.indexOf('merge')` 判斷呼叫端為 lodash `merge`,避免依賴讀取次數.
+- **語料 wire 案怎麼接**:語料以 `ctx.sec.password` 當秘密,lowdb 之秘密是檔案路徑,故令 `ctx.sec.password = 一個不存在之相對 url`(`zzWireQ9x7Kd/zzDbQ9fileK`,從不讀寫)並由 `select({ $foo: 1 })` 觸發 error 訂閱函數(`procFind` 在讀檔前拒收,零磁碟存取)再拋 `make(ctx)` 之值,取 funLog 之 detail 給 `verify`.**不要用 repo 內真實路徑當「密碼」**:語料以 5 字元窗比對,`file:///C:/opensrc/…` 之堆疊行會與路徑片段誤報洩漏.新增之 wire 案未登錄於處置表時,第一個測試判紅(強迫逐案處置).
+- **fail-closed 之外顯影響**:`diag.err` 對「自有存取器屬性之物件」回副本(`{ message: '[Getter/Setter]' }`),使 `unit-write-pre-error` 之「拋出 `{ get message() { throw } }` → reject 為拋出者本身、事件訊息 `unknown error`」型不再成立(getter 不被執行是改善);該案期望依新規則更新並載入 README/帳本,不是放寬.
+- **logDetail 之 util.inspect 差異**:wsemi 副本不沿用使用端原型,`class MyErr extends Error {}` 之副本 `name` 屬性保留為 `MyErr`,但 `util.inspect` 依 `constructor.name` 顯示 `Error: …`(第 153 項自製版曾以子原型保留);屬規格明定之取捨(副本原型一律內建),已入 README 與接線測試,**未**當作 wsemi 缺陷.
+- **變異腳本**:`mocha --reporter json --reporter-option output=<檔>` 取失敗標題,以標題前綴 `[靜態]` 分開計「行為測試殺死」與「靜態盤點殺死」;每變異用「`from` 恰出現 1 次」之取代並要求原始碼確有變動.等價變異(`procPk` 之固定訊息不含資料)僅靜態盤點抓到,於報告明示.
+- **打包驗證**:以 `toolg/gDistRollup.mjs` 同設定建到 tmp 並實跑 UMD(insert、change 訂閱函數拋錯之 funLog、損毀檔之 reject 遮罩);wsemi 之診斷模組不含靜態 Node 內建 import,UMD 內唯一之 `require("util")` 來自 lodash 之 `nodeUtil`.
+- 測試鎖等待:本機常有他套件持鎖,單次 `--lock` 等 1.5–2 分鐘,合併成少次執行(變異腳本內部串行跑 27 變體 + 基準,一次 33 秒).
+- 本輪探針/變異/建置腳本備份於 `C:\opensrcOper\dnow\20261029002013\agent-out\mig-lowdb-evidence\`,本機 `./tmp/mig-lowdb/` 已清除.

@@ -106,21 +106,23 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
 原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
 U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。</li>
 </ol>
-<p>診斷輸出(w-orm系列規則，選項名稱與語意同w-serv-orm、w-orm-reladb): 本套件唯一會寫console之情形，為change或error事件之訂閱函數自行拋錯(拋錯不影響本次操作之結果，僅輸出診斷)，
-一律經單一出口(src/getDiag.mjs)。預設只輸出固定標籤與不含個資之摘要，例如change handler threw { mode: 'insert', errType: 'Error' }
-(操作別、錯誤類別名稱與機器代碼如ENOENT)，不含資料值、id、訂閱函數拋出之錯誤原文與堆疊。</p>
+<p>診斷輸出與錯誤值之遮罩(w-orm系列規則，共用實作為wsemi之getDiag系列函數，選項名稱與語意同w-serv-orm、w-orm-reladb，細節見wsemi之getDiag): 本套件唯一會寫console之情形，為change或error事件之訂閱函數自行拋錯(拋錯不影響本次操作之結果，僅輸出診斷)，
+一律經wsemi之getDiag所回傳之單一出口。預設只輸出固定標籤與不含個資之摘要，例如change handler threw { mode: 'insert', errType: 'Error' }
+(操作別、內建錯誤類別名稱與機器代碼如ENOENT，自訂類別名稱與未列入之代碼一律以Error或省略)，不含資料值、id、訂閱函數拋出之錯誤原文與堆疊。</p>
 <ol>
-<li>opt.logDetail為true時還原舊版輸出(console.log(訂閱函數拋出之值))，可能含資料值與id，僅供除錯；</li>
+<li>opt.logDetail為true時，改為console.log(標籤, 細節)，細節為訂閱函數拋出之值的遮罩拷貝，可能含資料值與id，僅供除錯；</li>
 <li>opt.funLog(label, safe, detail)為函數時，診斷輸出只交給它而不寫console，safe為不含個資之摘要，detail為完整細節(遮罩拷貝，有深度與節點數上限，不沿用原型、不執行使用端程式)，供使用端遮罩或轉送；</li>
-<li>資料庫檔案位置(opt.url與其絕對路徑，本套件之連線字串)於任何輸出管道(預設、logDetail、funLog之細節)一律以***取代；</li>
-<li>選項型別錯誤者忽略並用預設，與useCache、autoGenPk一致；各操作之resolve/reject內容與事件payload及時機皆不受診斷輸出影響，funLog拋錯或回傳reject之promise亦不影響操作。</li>
+<li>資料庫檔案位置(opt.url、其絕對路徑、path.normalize後之路徑與lowdb底層寫檔用之暫存檔路徑)於診斷輸出(預設、logDetail、funLog之細節)一律以***取代；</li>
+<li>對外之錯誤值(操作reject之錯誤、error事件之訊息、save與del逐筆之err)若為外來值(lowdb、檔案系統之錯誤，或呼叫端資料觸發之拋錯)，其內之憑證(scheme://帳密@網址、password=與token=等憑證鍵值對、Bearer權杖)以***取代，
+其餘(含資料庫檔案位置)原樣；無須遮罩者回傳原物件，有者回傳同類別之副本；套件自身以固定詞彙組成之錯誤(如invalid data: 原因 at [路徑])原樣、不經遮罩；</li>
+<li>選項型別錯誤者忽略並用預設，與useCache、autoGenPk一致；各操作之resolve/reject成敗與事件payload及時機皆不受診斷輸出影響，funLog拋錯或回傳reject之promise亦不影響操作。</li>
 </ol></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line88">line 88</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line110">line 110</a>
     </li></ul></dd>
     
 
@@ -492,7 +494,7 @@ U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不�
                 </td>
             
 
-            <td class="description last"><p>輸入診斷輸出是否還原為含資料值與錯誤原文之完整細節(僅供除錯)，須為true才生效，其餘值忽略，預設false；資料庫檔案位置仍以***遮罩</p></td>
+            <td class="description last"><p>輸入診斷輸出是否改為含資料值與錯誤原文之完整細節(console.log(標籤, 細節)，僅供除錯)，須為true才生效，其餘值忽略，預設false；資料庫檔案位置仍以***遮罩</p></td>
         </tr>
 
     
@@ -532,7 +534,7 @@ U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不�
                 </td>
             
 
-            <td class="description last"><p>輸入診斷輸出函數(label, safe, detail)，須為函數才生效，其餘值忽略，預設無；給予時診斷輸出只交給它而不寫console，safe為不含個資之摘要(可能為undefined)，detail為完整細節之遮罩拷貝(無細節時不傳此引數)，其拋錯或回傳reject之promise皆不影響操作</p></td>
+            <td class="description last"><p>輸入診斷輸出函數(label, safe, detail)，須為函數才生效，其餘值忽略，預設無；給予時診斷輸出只交給它而不寫console，safe為不含個資之摘要，detail為完整細節之遮罩拷貝(無細節時不傳此引數)，其拋錯或回傳reject之promise皆不影響操作</p></td>
         </tr>
 
     
@@ -654,7 +656,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1311">line 1311</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1345">line 1345</a>
     </li></ul></dd>
     
 
@@ -832,7 +834,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1125">line 1125</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1159">line 1159</a>
     </li></ul></dd>
     
 
@@ -998,7 +1000,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line796">line 796</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line830">line 830</a>
     </li></ul></dd>
     
 
@@ -1163,7 +1165,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line654">line 654</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line688">line 688</a>
     </li></ul></dd>
     
 
@@ -1452,7 +1454,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line906">line 906</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line940">line 940</a>
     </li></ul></dd>
     
 
@@ -1742,7 +1744,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line590">line 590</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line624">line 624</a>
     </li></ul></dd>
     
 
@@ -1902,7 +1904,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line522">line 522</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line556">line 556</a>
     </li></ul></dd>
     
 
@@ -2087,7 +2089,7 @@ select亦納入序列化，令其不致與寫入之整檔替換交錯。</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line186">line 186</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line214">line 214</a>
     </li></ul></dd>
     
 
@@ -2171,7 +2173,7 @@ select亦納入序列化，令其不致與寫入之整檔替換交錯。</p>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Wed Oct 28 2026 10:17:53 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Oct 29 2026 20:05:27 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

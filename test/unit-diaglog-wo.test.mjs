@@ -2,16 +2,21 @@ import fs from 'fs'
 import path from 'path'
 import util from 'util'
 import assert from 'assert'
+import { fileURLToPath } from 'url'
 import wo from '../src/WOrmLowdb.mjs'
 import { scenario, settle } from './tools/diagScenario.mjs'
 
 
-//rulebook R-DIAG-01: 診斷輸出(console)之預設安全與可控, 以真實JSON檔驗證WOrmLowdb整體(純函數見unit-diaglog.test.mjs)
+//SRC, 受測之src夾(相對於本檔, 使靜態盤點與受測模組同源)
+let SRC = fileURLToPath(new URL('../src', import.meta.url))
+
+
+//rulebook R-DIAG-01: 診斷輸出(console)之預設安全與可控, 以真實JSON檔驗證WOrmLowdb整體之接線(遮罩與摘要之實作在wsemi, 形態類案由wsemi之共用語料驅動, 見unit-diaglog-wire.test.mjs)
 //  R-DIAG-01-1 預設只輸出標籤與不含個資之摘要(不含資料值、id、使用端程式拋出之錯誤原文與堆疊、路徑)
-//  R-DIAG-01-2 opt.logDetail為true還原舊版細節輸出(格式同舊版console.log(拋出之值)), 資料庫檔案位置(opt.url, 本套件之連線字串)一律以***遮罩
+//  R-DIAG-01-2 opt.logDetail為true時console.log(標籤, 細節), 細節為遮罩拷貝, 資料庫檔案位置(opt.url, 本套件之連線字串)一律以***遮罩
 //  R-DIAG-01-3 opt.funLog(label, safe, detail)取代console收完整細節(資料庫檔案位置仍遮罩); 型別錯誤之選項忽略並用預設(同本套件其他選項)
-//  R-DIAG-01-4 診斷輸出不得影響各操作之resolve/reject內容與事件payload及時機
-//  R-DIAG-01-5 src內所有console輸出經單一出口(src/getDiag.mjs)
+//  R-DIAG-01-4 診斷輸出不得影響各操作之resolve/reject成敗與事件payload及時機
+//  R-DIAG-01-5 src內所有console輸出經單一出口(wsemi之getDiag), src內不自寫遮罩與診斷模組
 //  R-DIAG-01-6 建構函式之錯誤訊息不回顯opt.url(固定詞彙)
 
 
@@ -92,35 +97,33 @@ describe('diaglog-wo', function() {
 
     describe('單一出口(R-DIAG-01-5)', function() {
 
-        it('R-DIAG-01-5 src內除getDiag.mjs外不得直接呼叫console或寫process.stdout/stderr或emitWarning(所有診斷輸出經單一出口)', function() {
+        it('R-DIAG-01-5 src內不得直接呼叫console或寫process.stdout/stderr或emitWarning(所有診斷輸出經wsemi之getDiag所回傳之單一出口)', function() {
             let bads = []
             let n = 0
-            for (let f of fs.readdirSync('./src')) {
-                if (!/\.(mjs|js)$/.test(f) || f === 'getDiag.mjs') {
+            for (let f of fs.readdirSync(SRC)) {
+                if (!/\.(mjs|js)$/.test(f)) {
                     continue
                 }
                 n++
-                let s = fs.readFileSync(`./src/${f}`, 'utf8').replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+                let s = fs.readFileSync(path.join(SRC, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
                 s.split(/\r?\n/).forEach((line, k) => {
                     if (isOutputCode(line)) {
                         bads.push(`${f}:${k + 1} ${line.trim().slice(0, 80)}`)
                     }
                 })
             }
-            assert.ok(n >= 1 && fs.existsSync('./src/WOrmLowdb.mjs'), `掃描檔數過少: ${n}`)
+            assert.ok(n >= 1 && fs.existsSync(path.join(SRC, 'WOrmLowdb.mjs')), `掃描檔數過少: ${n}`)
             assert.deepStrictEqual(bads, [], `下列站點未經單一出口:\n${bads.join('\n')}`)
         })
 
-        it('R-DIAG-01-5 getDiag.mjs之console呼叫只在diag內(其餘函數不寫console), 且全檔不寫process.stdout/stderr、不呼叫emitWarning', function() {
-            let s = fs.readFileSync('./src/getDiag.mjs', 'utf8')
-            let i0 = s.indexOf('function getDiag(')
-            let i1 = s.indexOf('function isErrCode(')
-            assert.ok(i0 > 0 && i1 > i0)
-            let outside = s.slice(0, i0) + s.slice(i1)
-            let bad = outside.split(/\r?\n/).filter((line) => isOutputCode(line))
-            assert.deepStrictEqual(bad, [])
-            let others = s.split(/\r?\n/).filter((line) => /process\s*\.\s*(stdout|stderr)/.test(stripLineComment(line)) || /emitWarning/.test(stripLineComment(line)))
-            assert.deepStrictEqual(others, [])
+        it('R-DIAG-01-5 (D1單一實作)src內不自寫遮罩與診斷模組: 僅WOrmLowdb.mjs一檔, 診斷出口與秘密導出皆取自wsemi, 不靜態import Node內建util, 程式碼內無遮罩字樣***與自寫之遮罩函數', function() {
+            assert.deepStrictEqual(fs.readdirSync(SRC).sort(), ['WOrmLowdb.mjs'])
+            let s = fs.readFileSync(path.join(SRC, 'WOrmLowdb.mjs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+            let code = s.split(/\r?\n/).map(stripLineComment).join('\n')
+            assert.ok(/import getDiag from 'wsemi\/src\/getDiag\.mjs'/.test(code) && /import getDiagSecrets from 'wsemi\/src\/getDiagSecrets\.mjs'/.test(code))
+            assert.ok(!/from\s+'(node:)?util'/.test(code), '不得靜態import util')
+            assert.ok(!/\*\*\*/.test(code), '遮罩字樣只在wsemi')
+            assert.ok(!/\b(maskText|cpMask|getSecrets|getBriefErr|getOptLog|maskSafe|RE_URL_CRED)\b/.test(code), '不得出現自寫之遮罩與摘要函數')
         })
 
         it('R-DIAG-01-5 掃描器自身之判定: 字串內含http://者其後之console呼叫仍被偵測, 註解與區塊註解內者不計', function() {
@@ -133,11 +136,13 @@ describe('diaglog-wo', function() {
             assert.ok(!isOutputCode('    let a = 1'))
         })
 
-        it('R-DIAG-01-5 WOrmLowdb.mjs內diag之呼叫恰2處(change與error訂閱函數拋錯), 與盤點一致', function() {
-            let s = fs.readFileSync('./src/WOrmLowdb.mjs', 'utf8')
-            let calls = s.split(/\r?\n/).filter((line) => /\bdiag\(/.test(line.replace(/\/\/.*$/, '')))
-            assert.strictEqual(calls.length, 2, calls.join('\n'))
-            assert.ok(calls[0].indexOf('change handler threw') >= 0 && calls[1].indexOf('error handler threw') >= 0)
+        it('R-DIAG-01-5 WOrmLowdb.mjs內diag之呼叫恰2處(change與error訂閱函數拋錯), label為字串字面值、safe只含mode與diag.brief、不帶level(第4參數, 兩站皆輸出至stdout), 與盤點一致', function() {
+            let s = fs.readFileSync(path.join(SRC, 'WOrmLowdb.mjs'), 'utf8')
+            let calls = s.split(/\r?\n/).filter((line) => /\bdiag\(/.test(line.replace(/\/\/.*$/, ''))).map((v) => v.trim())
+            assert.deepStrictEqual(calls, [
+                'diag(\'change handler threw\', { mode, ...diag.brief(err) }, () => err)',
+                'diag(\'error handler threw\', { mode, ...diag.brief(errEmit) }, () => errEmit)',
+            ])
         })
 
     })
@@ -382,7 +387,7 @@ describe('diaglog-wo', function() {
 
     describe('logDetail(R-DIAG-01-2)', function() {
 
-        it('還原舊版輸出格式: 拋出之值各以console.log(值)一行輸出, 不加標籤(輸出與util.format(值)相同)', async function() {
+        it('logDetail輸出格式: 拋出之值各以console.log(標籤, 遮罩拷貝)一行輸出(輸出與util.format(標籤, 值)相同; 不再有省略標籤之舊版格式)', async function() {
             let plain = new Error(`plain listener ${ID}`)
             let withProps = Object.assign(new Error(`props ${ID}`), { code: 'EACCES', info: { id: ID, tags: ['a', 'b'] } })
             let withCause = new Error('outer', { cause: new Error(`inner ${NAME}`) })
@@ -398,7 +403,13 @@ describe('diaglog-wo', function() {
             for (k = 0; k < vals.length; k++) {
                 let { res, lines } = await capture(() => settle(w.insert({ id: `${ID}${k}`, name: NAME })))
                 assert.deepStrictEqual(res, { ok: { n: 1, nInserted: 1, ok: 1 } })
-                assert.deepStrictEqual(lines, [util.format(vals[k])], `案${k}與舊版console.log(值)不同`)
+                if (vals[k] === sub) {
+                    //已知差異(wsemi之副本不沿用使用端原型): 自訂Error子類別於util.inspect顯示為Error, 類別名保留於副本之name屬性(見unit-diaglog-wire)
+                    assert.strictEqual(lines.length, 1)
+                    assert.ok(lines[0].startsWith(`change handler threw Error: sub ${ID}\n`), lines[0].split('\n')[0])
+                    continue
+                }
+                assert.deepStrictEqual(lines, [util.format('change handler threw', vals[k])], `案${k}與console.log(標籤, 值)不同`)
             }
         })
 
@@ -419,25 +430,28 @@ describe('diaglog-wo', function() {
             let text = lines[0]
             assert.ok(text.indexOf(SEC) < 0 && text.indexOf(abs) < 0 && text.indexOf(o.url) < 0, text.slice(0, 500))
             assert.ok(text.indexOf(ID) >= 0 && text.indexOf('***') >= 0, '非路徑之細節應保留')
-            assert.ok(text.split('\n')[0].startsWith('Error: open *** then *** then *** id=u-secret-001@example.com'), text.split('\n')[0])
+            assert.ok(text.split('\n')[0].startsWith('change handler threw Error: open *** then *** then *** id=u-secret-001@example.com'), text.split('\n')[0])
         })
 
-        it('error訂閱函數拋錯: 還原原文輸出', async function() {
+        it('error訂閱函數拋錯: 輸出標籤與原文細節', async function() {
             let w = wo(mkOpt({ logDetail: true }))
             w.on('error', () => {
                 throw new Error(`plain error listener ${ID}`)
             })
             let { lines } = await capture(() => settle(w.select({ $foo: 1 })))
             assert.strictEqual(lines.length, 1)
-            assert.strictEqual(lines[0].split('\n')[0], `Error: plain error listener ${ID}`)
+            assert.strictEqual(lines[0].split('\n')[0], `error handler threw Error: plain error listener ${ID}`)
         })
 
-        it('情境對照: 訂閱函數拋錯19次之輸出行數與每行首行同修改前(git HEAD)之固定預期值', async function() {
+        it('情境對照: 訂閱函數拋錯19次之輸出行數同修改前(git HEAD)之固定預期值, 每行首行去掉標籤(change handler threw或error handler threw)後同預期值', async function() {
             let w = wo(mkOpt({ logDetail: true }))
             let { lines } = await capture(() => scenario(w, true))
             assert.strictEqual(golden.badConsoleCount, 19)
             assert.strictEqual(lines.length, golden.badConsoleCount)
-            assert.deepStrictEqual(lines.map((v) => v.split('\n')[0]), golden.badConsoleFirstLines)
+            let re = /^(change|error) handler threw /
+            let firsts = lines.map((v) => v.split('\n')[0])
+            assert.ok(firsts.every((v) => re.test(v)), firsts.join('|'))
+            assert.deepStrictEqual(firsts.map((v) => v.replace(re, '')), golden.badConsoleFirstLines)
         })
 
     })
@@ -466,7 +480,7 @@ describe('diaglog-wo', function() {
                 }
                 else if (ch === 'logDetail') {
                     assert.strictEqual(lines.length, 1)
-                    assert.strictEqual(lines[0].split('\n')[0], `Error: listener rel=*** abs=*** norm=*** tmp=*** tmprel=*** id=${ID}`)
+                    assert.strictEqual(lines[0].split('\n')[0], `error handler threw Error: listener rel=*** abs=*** norm=*** tmp=*** tmprel=*** id=${ID}`)
                 }
                 else {
                     assert.deepStrictEqual(lines, [])
@@ -497,7 +511,7 @@ describe('diaglog-wo', function() {
                 }
                 else if (ch === 'logDetail') {
                     assert.strictEqual(lines.length, 1)
-                    assert.strictEqual(lines[0].split('\n')[0], 'Error: saw: ENOENT: no such file or directory, open \'***\'', lines[0].split('\n')[0])
+                    assert.strictEqual(lines[0].split('\n')[0], 'error handler threw Error: saw: ENOENT: no such file or directory, open \'***\'', lines[0].split('\n')[0])
                 }
                 else {
                     assert.deepStrictEqual(lines, [])
