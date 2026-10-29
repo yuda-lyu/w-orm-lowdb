@@ -69,11 +69,31 @@ import haskey from 'wsemi/src/haskey.mjs'
 import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
 import chkOrmStr from 'wsemi/src/chkOrmStr.mjs'
 import chkOrmData from 'wsemi/src/chkOrmData.mjs'
-import { getOptLog, getSecrets, getDiag, getBriefErr } from './getDiag.mjs'
+import getDiag from 'wsemi/src/getDiag.mjs'
+import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
 
 
 //kpGqueue, 以資料庫檔案路徑為鍵之全域序列化佇列, 詳見下方serialize說明
 let kpGqueue = {}
+
+
+//setOwnErr, 套件自身以固定詞彙組成之錯誤(mkErr建立者)之集合: 其訊息不含後端、驅動與使用端之錯誤原文, 交出時不經診斷遮罩(帳本R-DIAG-01規則4);
+//固定字串經遮罩挖空會讓缺口反推短密碼, 且遮罩只應用於外來值; 以WeakSet判定(不讀錯誤物件之任何屬性, Proxy亦安全)
+let setOwnErr = new WeakSet()
+
+
+//mkErr, 建立套件自身以固定詞彙組成之錯誤並登錄
+let mkErr = (msg) => {
+    let err = new Error(msg)
+    setOwnErr.add(err)
+    return err
+}
+
+
+//isOwnErr, 是否為套件自身以固定詞彙組成之錯誤
+let isOwnErr = (err) => {
+    return err !== null &amp;&amp; typeof err === 'object' &amp;&amp; setOwnErr.has(err)
+}
 
 
 /**
@@ -113,13 +133,15 @@ let kpGqueue = {}
  * 原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
  * U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。
  *
- * 診斷輸出(w-orm系列規則，選項名稱與語意同w-serv-orm、w-orm-reladb): 本套件唯一會寫console之情形，為change或error事件之訂閱函數自行拋錯(拋錯不影響本次操作之結果，僅輸出診斷)，
- * 一律經單一出口(src/getDiag.mjs)。預設只輸出固定標籤與不含個資之摘要，例如change handler threw { mode: 'insert', errType: 'Error' }
- * (操作別、錯誤類別名稱與機器代碼如ENOENT)，不含資料值、id、訂閱函數拋出之錯誤原文與堆疊。
- * 1. opt.logDetail為true時還原舊版輸出(console.log(訂閱函數拋出之值))，可能含資料值與id，僅供除錯；
+ * 診斷輸出與錯誤值之遮罩(w-orm系列規則，共用實作為wsemi之getDiag系列函數，選項名稱與語意同w-serv-orm、w-orm-reladb，細節見wsemi之getDiag): 本套件唯一會寫console之情形，為change或error事件之訂閱函數自行拋錯(拋錯不影響本次操作之結果，僅輸出診斷)，
+ * 一律經wsemi之getDiag所回傳之單一出口。預設只輸出固定標籤與不含個資之摘要，例如change handler threw { mode: 'insert', errType: 'Error' }
+ * (操作別、內建錯誤類別名稱與機器代碼如ENOENT，自訂類別名稱與未列入之代碼一律以Error或省略)，不含資料值、id、訂閱函數拋出之錯誤原文與堆疊。
+ * 1. opt.logDetail為true時，改為console.log(標籤, 細節)，細節為訂閱函數拋出之值的遮罩拷貝，可能含資料值與id，僅供除錯；
  * 2. opt.funLog(label, safe, detail)為函數時，診斷輸出只交給它而不寫console，safe為不含個資之摘要，detail為完整細節(遮罩拷貝，有深度與節點數上限，不沿用原型、不執行使用端程式)，供使用端遮罩或轉送；
- * 3. 資料庫檔案位置(opt.url與其絕對路徑，本套件之連線字串)於任何輸出管道(預設、logDetail、funLog之細節)一律以***取代；
- * 4. 選項型別錯誤者忽略並用預設，與useCache、autoGenPk一致；各操作之resolve/reject內容與事件payload及時機皆不受診斷輸出影響，funLog拋錯或回傳reject之promise亦不影響操作。
+ * 3. 資料庫檔案位置(opt.url、其絕對路徑、path.normalize後之路徑與lowdb底層寫檔用之暫存檔路徑)於診斷輸出(預設、logDetail、funLog之細節)一律以***取代；
+ * 4. 對外之錯誤值(操作reject之錯誤、error事件之訊息、save與del逐筆之err)若為外來值(lowdb、檔案系統之錯誤，或呼叫端資料觸發之拋錯)，其內之憑證(scheme://帳密@網址、password=與token=等憑證鍵值對、Bearer權杖)以***取代，
+ *    其餘(含資料庫檔案位置)原樣；無須遮罩者回傳原物件，有者回傳同類別之副本；套件自身以固定詞彙組成之錯誤(如invalid data: 原因 at [路徑])原樣、不經遮罩；
+ * 5. 選項型別錯誤者忽略並用預設，與useCache、autoGenPk一致；各操作之resolve/reject成敗與事件payload及時機皆不受診斷輸出影響，funLog拋錯或回傳reject之promise亦不影響操作。
  *
  * @class
  * @param {Object} [opt={}] 輸入設定物件，預設{}
@@ -128,8 +150,8 @@ let kpGqueue = {}
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw
  * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
  * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject
- * @param {Boolean} [opt.logDetail=false] 輸入診斷輸出是否還原為含資料值與錯誤原文之完整細節(僅供除錯)，須為true才生效，其餘值忽略，預設false；資料庫檔案位置仍以***遮罩
- * @param {Function} [opt.funLog=null] 輸入診斷輸出函數(label, safe, detail)，須為函數才生效，其餘值忽略，預設無；給予時診斷輸出只交給它而不寫console，safe為不含個資之摘要(可能為undefined)，detail為完整細節之遮罩拷貝(無細節時不傳此引數)，其拋錯或回傳reject之promise皆不影響操作
+ * @param {Boolean} [opt.logDetail=false] 輸入診斷輸出是否改為含資料值與錯誤原文之完整細節(console.log(標籤, 細節)，僅供除錯)，須為true才生效，其餘值忽略，預設false；資料庫檔案位置仍以***遮罩
+ * @param {Function} [opt.funLog=null] 輸入診斷輸出函數(label, safe, detail)，須為函數才生效，其餘值忽略，預設無；給予時診斷輸出只交給它而不寫console，safe為不含個資之摘要，detail為完整細節之遮罩拷貝(無細節時不傳此引數)，其拋錯或回傳reject之promise皆不影響操作
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
  */
 function WOrmLowdb(opt = {}) {
@@ -187,10 +209,6 @@ function WOrmLowdb(opt = {}) {
         autoGenPk = true
     }
 
-    //optLog, 診斷輸出之設定快照{ logDetail, funLog }(帳本R-DIAG-01), 其後各路徑共用此快照, 不再讀取使用端的opt;
-    //logDetail不為true、funLog不為函數(含讀取拋錯)者忽略並用預設, 與useCache、autoGenPk型別錯誤即用預設一致
-    let optLog = getOptLog(opt)
-
     //key
     let key = `${db}:${cl}`
 
@@ -206,12 +224,22 @@ function WOrmLowdb(opt = {}) {
     //gkey, 基於url也就是以檔案路徑為準, 同檔案路徑須使用同一佇列
     let gkey = path.resolve(url)
 
-    //diag, 診斷輸出之單一出口(帳本R-DIAG-01), src內除getDiag.mjs外不得直接呼叫console;
-    //預設只輸出固定標籤與不含個資之摘要, logDetail還原細節輸出, funLog取代console收完整細節;
-    //資料庫檔案位置(本套件之連線字串)於任何輸出(含細節)一律以***遮罩: opt.url原樣、絕對路徑、path.normalize後之相對路徑,
-    //以及lowdb底層steno寫檔所用之暫存檔(&lt;目錄>/.&lt;檔名>.tmp, 寫檔失敗之系統錯誤訊息會帶它; 路徑經path.join正規化, 故相對與絕對各取一個)
+    //diag, 診斷輸出之單一出口(帳本R-DIAG-01, 實作為wsemi之getDiag, 建構時讀opt.logDetail與opt.funLog取快照, 其後不再讀opt), src內不得直接呼叫console;
+    //預設只輸出固定標籤與不含個資之摘要, logDetail改輸出細節, funLog取代console收完整細節;
+    //資料庫檔案位置(本套件之連線字串)以paths宣告, 於診斷輸出(含細節)一律以***遮罩: opt.url原樣、絕對路徑、path.normalize後之相對路徑,
+    //以及lowdb底層steno寫檔所用之暫存檔(&lt;目錄>/.&lt;檔名>.tmp, 寫檔失敗之系統錯誤訊息會帶它; 路徑經path.join正規化, 故相對與絕對各取一個);
+    //路徑不屬憑證, 對外之錯誤值(diag.err、diag.mask)不遮, 只遮網址帳密與憑證鍵值對; safe只用到mode(恆含errType、errCode)
     let tmpOf = (f) => path.join(path.dirname(f), `.${path.basename(f)}.tmp`)
-    let diag = getDiag(optLog, getSecrets([url, gkey, path.normalize(url), tmpOf(url), tmpOf(gkey)]))
+    let diag = getDiag(opt, {
+        secrets: getDiagSecrets({ paths: [url, gkey, path.normalize(url), tmpOf(url), tmpOf(gkey)] }),
+        safeKeys: ['mode'],
+    })
+
+    //procErr, 對外之錯誤值(reject與error事件): 外來值(lowdb、steno、檔案系統之錯誤與呼叫端資料觸發之拋錯)經diag.err移除憑證, 無須處理者回原物件;
+    //套件自身以固定詞彙組成之錯誤(mkErr建立者)原樣, 不經遮罩(帳本R-DIAG-01規則4)
+    let procErr = (err) => {
+        return isOwnErr(err) ? err : diag.err(err)
+    }
 
     //佇列初始化, 同一資料庫檔案之全部操作一律序列化
     if (!haskey(kpGqueue, gkey)) {
@@ -313,7 +341,7 @@ function WOrmLowdb(opt = {}) {
             let s = JSON.stringify(v)
             if (typeof s === 'string' &amp;&amp; s.charAt(0) === '"' &amp;&amp; !reIsoDate.test(s.slice(1, -1))) {
                 let p = `data${ks.map((k) => (typeof k === 'number' ? `[${k}]` : pathSeg(k))).join('')}`
-                throw new Error(`invalid data: Date year is out of range 0000-9999 at [${pathStr(p)}]`)
+                throw mkErr(`invalid data: Date year is out of range 0000-9999 at [${pathStr(p)}]`)
             }
             return
         }
@@ -401,13 +429,13 @@ function WOrmLowdb(opt = {}) {
     }
 
     //emitChange, 資料實際異動成功後發出, 事件僅為附加通知不承擔回傳義務
-    //一律包try/catch, 令訂閱函數自身拋錯不影響本次操作之結果; 拋出之值經diag輸出(預設只列操作別與錯誤類別/代碼, 原文為細節)
+    //一律包try/catch, 令訂閱函數自身拋錯不影響本次操作之結果; 拋出之值經diag輸出(預設只列操作別與錯誤類別/代碼, 原文為細節), 輸出至stdout(level預設log)
     let emitChange = (mode, data, res) => {
         try {
             ee.emit('change', mode, data, res)
         }
         catch (err) {
-            diag('change handler threw', { mode, ...getBriefErr(err) }, () => err, true)
+            diag('change handler threw', { mode, ...diag.brief(err) }, () => err)
         }
     }
 
@@ -425,7 +453,7 @@ function WOrmLowdb(opt = {}) {
             ee.emit('error', mode, data, msg)
         }
         catch (errEmit) {
-            diag('error handler threw', { mode, ...getBriefErr(errEmit) }, () => errEmit, true)
+            diag('error handler threw', { mode, ...diag.brief(errEmit) }, () => errEmit)
         }
     }
 
@@ -436,6 +464,12 @@ function WOrmLowdb(opt = {}) {
             return m
         }
         return String(err)
+    }
+
+    //procMsg, 逐筆結果之err欄位(字串, 於建立時遮罩): 外來值之錯誤訊息經diag.mask移除憑證, 套件自身以固定詞彙組成之錯誤(mkErr建立者)原樣(帳本R-DIAG-01規則4)
+    let procMsg = (err) => {
+        let msg = getErrMsg(err)
+        return isOwnErr(err) ? msg : diag.mask(msg)
     }
 
     //procPk, 依autoGenPk處理各數據之主鍵, 供insert、insertBulk與save共用
@@ -452,7 +486,7 @@ function WOrmLowdb(opt = {}) {
         }
         each(data, function(v, k) {
             if (!isestr(get(v, 'id'))) {
-                throw new Error(`can not ${fnName} by data[${k}] without valid id when autoGenPk is false`)
+                throw mkErr(`can not ${fnName} by data[${k}] without valid id when autoGenPk is false`)
             }
         })
         return data
@@ -492,7 +526,7 @@ function WOrmLowdb(opt = {}) {
         each(data, function(v, k) {
             let msg = getWellFormedMsg(v, k)
             if (msg !== null) {
-                throw new Error(msg)
+                throw mkErr(msg)
             }
         })
     }
@@ -599,7 +633,7 @@ function WOrmLowdb(opt = {}) {
         }
         catch (err) {
             isErr = true
-            res = err
+            res = procErr(err)
         }
 
         //check
@@ -666,7 +700,7 @@ function WOrmLowdb(opt = {}) {
         }
         catch (err) {
             isErr = true
-            res = err
+            res = procErr(err)
         }
 
         //check
@@ -802,7 +836,7 @@ function WOrmLowdb(opt = {}) {
         }
         catch (err) {
             isErr = true
-            res = err
+            res = procErr(err)
         }
 
         //update, 不能保證插入多少, 一律重設快取
@@ -895,7 +929,7 @@ function WOrmLowdb(opt = {}) {
 
             //check
             if (pkConflict !== null) {
-                throw new Error(`can not insertBulk by existed id[${pkConflict}]`)
+                throw mkErr(`can not insertBulk by existed id[${pkConflict}]`)
             }
 
             //write, 全部通過檢查方寫入, 且寫檔為單次[寫暫存檔後更名]之原子替換,
@@ -912,7 +946,7 @@ function WOrmLowdb(opt = {}) {
         }
         catch (err) {
             isErr = true
-            res = err
+            res = procErr(err)
         }
 
         //update, 不能保證插入多少, 一律重設快取
@@ -1005,7 +1039,7 @@ function WOrmLowdb(opt = {}) {
 
                     //不合格者以該筆失敗回報(下方catch組成ok為0之結果), 先於該筆之任何讀取與寫入
                     if (msgs[k] !== null) {
-                        throw new Error(msgs[k])
+                        throw mkErr(msgs[k])
                     }
 
                     //查找資料表內v.id
@@ -1027,7 +1061,7 @@ function WOrmLowdb(opt = {}) {
                         let vIn = merge({}, v)
                         let eIn = chkOrmData(vIn, { root: `data[${k}]` })
                         if (eIn !== null) {
-                            throw new Error(`invalid data: ${eIn.reason} at [${eIn.path}]`)
+                            throw mkErr(`invalid data: ${eIn.reason} at [${eIn.path}]`)
                         }
 
                         //vm, 合併後之結果, 另建新物件以免污染原數據
@@ -1101,7 +1135,7 @@ function WOrmLowdb(opt = {}) {
                         nInserted: 0,
                         nModified: 0,
                         ok: 0,
-                        err: getErrMsg(err),
+                        err: procMsg(err),
                     }
 
                 }
@@ -1117,7 +1151,7 @@ function WOrmLowdb(opt = {}) {
         }
         catch (err) {
             isErr = true
-            res = err
+            res = procErr(err)
         }
 
         //update, 不能保證變更多少, 一律重設快取
@@ -1267,7 +1301,7 @@ function WOrmLowdb(opt = {}) {
                         n: 1,
                         nDeleted: 0,
                         ok: 0,
-                        err: getErrMsg(err),
+                        err: procMsg(err),
                     }
 
                 }
@@ -1286,7 +1320,7 @@ function WOrmLowdb(opt = {}) {
         }
         catch (err) {
             isErr = true
-            res = err
+            res = procErr(err)
         }
 
         //update, 不能保證刪除多少, 一律重設快取
@@ -1412,7 +1446,7 @@ function WOrmLowdb(opt = {}) {
         }
         catch (err) {
             isErr = true
-            res = err
+            res = procErr(err)
         }
 
         //update, 不能保證刪除多少, 一律重設快取
@@ -1473,7 +1507,7 @@ export default WOrmLowdb
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Wed Oct 28 2026 10:17:53 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Oct 29 2026 20:05:27 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
