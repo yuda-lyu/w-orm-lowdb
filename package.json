@@ -1,6 +1,6 @@
 {
   "name": "w-orm-lowdb",
-  "version": "1.0.41",
+  "version": "1.0.42",
   "main": "dist/w-orm-lowdb.umd.js",
   "dependencies": {
     "lowdb": "^7.0.1",

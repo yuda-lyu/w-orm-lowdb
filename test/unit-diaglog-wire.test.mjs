@@ -101,6 +101,9 @@ let WIRE = {
     R12: 'na 本套件無帳號概念(資料庫為本機JSON檔, 僅有儲存路徑)',
     A01: 'na 本套件不使用genDiagFunLog(伺服端轉接器)',
     A07: 'na 本套件不使用genDiagFunLog(伺服端轉接器)',
+    A11: 'na 本套件src只引入getDiag與getDiagSecrets, 兩者皆不引入genDiagFunLog(其opt.safeKeys為伺服端轉接器之第二道防線, 由使用端自建); 本套件自身之safe白名單為getDiag之cfg.safeKeys(見O15)',
+    C14: 'na pg之DatabaseError形態(getDiagBriefErr之types宣告): 本套件不宣告codes與types, 驅動錯誤之errType恆為Error',
+    U22: 'na getDiagSecrets之conns(連線位址依內容分類): 本套件以paths宣告資料庫檔案位置, 不用conns',
 }
 
 
@@ -132,15 +135,15 @@ describe('diaglog-wire', function() {
 
     describe('A. 共用語料wire案之接線', function() {
 
-        it('[靜態] 語料之wire案(20案)皆已於處置表登錄, 不得有未處置者', function() {
+        it('[靜態] 語料之wire案(23案)皆已於處置表登錄, 不得有未處置者', function() {
             let ids = diagCases.cases.filter((c) => c.wire).map((c) => c.id).sort()
             assert.deepStrictEqual(ids, Object.keys(WIRE).sort())
-            assert.strictEqual(ids.length, 20)
+            assert.strictEqual(ids.length, 23)
             let kinds = {}
             Object.values(WIRE).forEach((v) => {
                 kinds[v.split(' ')[0]] = (kinds[v.split(' ')[0]] || 0) + 1
             })
-            assert.deepStrictEqual(kinds, { 'D': 9, 'S': 1, 'L': 1, 'static': 1, 'R': 1, 'R-fs': 1, 'na': 6 })
+            assert.deepStrictEqual(kinds, { 'D': 9, 'S': 1, 'L': 1, 'static': 1, 'R': 1, 'R-fs': 1, 'na': 9 })
         })
 
         for (let id of Object.keys(WIRE).filter((k) => WIRE[k] === 'D')) {

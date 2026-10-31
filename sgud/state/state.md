@@ -3,7 +3,8 @@
 本檔記 w-orm-lowdb 當前已開發功能之最新狀態(各功能做到哪裡、對應之規則帳本條目與測試檔、已知缺口與待辦、最近一次驗證或發布之版本).只記現況、不寫過程,過程寫入 `sgud/exp/experience.md`;規則細節見 `sgud/rule/rulebook.md`.
 
 - 套件版本: `package.json` 為 1.0.39(版號與發布由使用者統籌,agent 不改);依賴 `wsemi ^1.9.31`(診斷與遮罩共用實作自 1.9.31 起).
-- 最近一次全套驗證: 2026-10-29(mig-lowdb),`npm test`(quiet-run,`--lock`)**3846 passing / 210 pending / 0 failing**(測試本體約 19 秒);210 pending 為 `unit-wellformed` 之 GridFS 案(略過並以計數斷言).
+- 最近一次全套驗證: 2026-11-01(orm233,wsemi 1.9.36),`npm test`(quiet-run,`--lock`)**3849 passing / 210 pending / 0 failing**(較 3846 多出之 3 案為處置表每個 `na` 項動態生成之 `[靜態] … 不適用本套件`);前次 2026-10-29(mig-lowdb),`npm test`(quiet-run,`--lock`)**3846 passing / 210 pending / 0 failing**(測試本體約 19 秒);210 pending 為 `unit-wellformed` 之 GridFS 案(略過並以計數斷言).
+- 語料 wire 案處置(2026-11-01,orm233): `unit-diaglog-wire` 之 `WIRE` 對 wsemi 1.9.36 語料 wire 案 23 個全數登錄(D 9、S 1、L 1、static 1、R 1、R-fs 1、na 9);新增之 A11(`genDiagFunLog` 之 `opt.safeKeys`)、C14(`getDiagBriefErr` 之 `types`,pg `DatabaseError` 形態)、U22(`getDiagSecrets` 之 `conns`)皆判不適用: `src/WOrmLowdb.mjs` 只引入 `getDiag`(:25)與 `getDiagSecrets`(:26),兩者不引入 `genDiagFunLog`;宣告為 `paths` 與 `safeKeys:['mode']`(:186-189),無 `codes`、`types`、`conns`.
 - 測試目錄: `test/*.test.mjs` 皆為 `unit-` 前綴(以真實 JSON 檔驗證,無 HTTP/RPC 端點);共用 `test/lib/`(`mkObserver.mjs`、`leaves.mjs`、`procConcurrency.mjs`)與 `test/tools/`(`diagScenario.mjs`、`diagGolden.json`).
 
 ## 功能與狀態
