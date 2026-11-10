@@ -94,10 +94,18 @@ describe('concurrency', function() {
                 runProc([url, 'users', 'B-', '200', `${startAt}`, 'insert']),
             ])
             let wo = WOrm({ url, db: 'worm', cl: 'users' })
-            let nRow = _.size(await wo.select())
+            //兩行程交錯寫入亦可能使檔案損毀而讀取時JSON解析失敗(高負載下實見), 同為不安全之證據, 不得使before整組失敗
+            let readErr = false
+            let nRow = 0
+            try {
+                nRow = _.size(await wo.select())
+            }
+            catch (err) {
+                readErr = true
+            }
             let hasErr = w.isestr(_.get(ra, 'err')) || w.isestr(_.get(rb, 'err'))
             let nLost = 400 - nRow
-            broken = hasErr || nLost > 0
+            broken = readErr || hasErr || nLost > 0
             // console.log('cross process detail', { nRound, nRow, nLost, hasErr })
             w.fsDeleteFile(url)
         }
