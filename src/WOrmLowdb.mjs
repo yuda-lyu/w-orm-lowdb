@@ -22,6 +22,7 @@ import haskey from 'wsemi/src/haskey.mjs'
 import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
 import chkOrmStr from 'wsemi/src/chkOrmStr.mjs'
 import chkOrmData from 'wsemi/src/chkOrmData.mjs'
+import chkReadable from 'wsemi/src/chkReadable.mjs'
 import getDiag from 'wsemi/src/getDiag.mjs'
 import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
 
@@ -49,49 +50,42 @@ let isOwnErr = (err) => {
 }
 
 
-//probeReadable, 呼叫端給的值之可讀性探針(單一來源, 帳本R-WRITE-ERR-01規則7): 不可讀者原樣拋出取值時之錯誤, 由站點所在之try(寫入入口與selectByPk)或建構函式之同步throw走原失敗通道;
-//why: wsemi(1.9.69起)之判斷函數(isestr、isbol、iseobj、isearr、haskey等)對讀取即拋錯之值(拋錯之Symbol.toStringTag、已撤銷之Proxy、陷阱拋錯之Proxy、元素getter拋錯之陣列)一律回false而不拋錯,
+//assertReadable, 呼叫端給的值之可讀性檢核(單一來源, 帳本R-WRITE-ERR-01規則7): 以wsemi之chkReadable分辨「不可讀」與「可讀而型別不符」, 不可讀者拋出固定詞彙之錯誤
+//invalid <名稱>: must be a readable value(不含值與原例外文字), 由站點所在之try(寫入入口與selectByPk)或建構函式之同步throw走原失敗通道;
+//why: wsemi之判斷函數(isestr、isbol、iseobj、isearr、haskey等)對讀取即拋錯之值(拋錯之Symbol.toStringTag、已撤銷之Proxy、陷阱拋錯之Proxy、元素getter拋錯之陣列)一律回false而不拋錯(1.9.69起),
 //本套件原借判斷函數之拋錯, 使此類輸入走「error事件恰一次後reject、資料庫不變」: 判斷函數不再拋錯後, 此類值被當成「輸入無效」而早退(回n為0、不發事件)或被當成選項預設值, 防線失效,
-//故凡判定呼叫端給的值之站點, 於判斷函數回false(無效或不可讀, 二者判斷函數不分)時, 以本探針明確區分: 不可讀者拋出, 可讀而型別不符者(數字、字串等)本探針不拋, 仍依判斷函數判為無效, 行為不變;
-//判斷函數回true(有效)時不探(其已讀成功, 其後之cloneDeep等照常讀取, 讀取次序與次數同修前, 有效資料之路徑零額外成本), 且探針於判斷函數之後, 故不致把「第2次讀取才拋錯」之值由原通道改判為早退
-//探針依站點所對應之判斷函數分三種(kind), 讀取範圍各取該判斷函數於修前(wsemi 1.9.68)所讀取者, 不多不少(多讀會把修前可讀之值多判為不可讀; 不呼叫getter、不展開二進位與集合內容):
-//  'str'(isestr所判者: opt.url/db/cl、pk、錯誤之message; 修前isstr為標籤式): 型別標籤(Object.prototype.toString.call, 會讀Symbol.toStringTag含其getter與Proxy之get陷阱, 已撤銷之Proxy於此拋錯,
-//    物件與函數皆讀); 標籤為String者另讀length(修前isestr以length判空)
-//  'bol'(isbol所判者: opt.useCache/autoGenPk、option.returnList; 修前isbol為lodash isBoolean): 只讀typeof為'object'者(函數不讀)——Symbol.toStringTag之has陷阱,
-//    有則再讀其自有屬性描述子, 其後讀型別標籤
-//  'data'(iseobj與isearr所判者: 各寫入入口之data): 型別標籤; 標籤為'[object Object]'者以與iseobj相同之for...in加hasOwnProperty走訪
-//    (觸發ownKeys、getOwnPropertyDescriptor、getPrototypeOf陷阱含原型鏈上者; 只走字串鍵, 不含Symbol鍵);
-//    標籤為'[object Array]'者讀length, 且length為1時讀唯一元素(同isearr, 元素之getter於此被呼叫); 其餘元素與巢狀值由其後之cloneDeep讀取, 其拋錯者於try內走同一錯誤路徑
-//  標籤為其他者(Date、Map、型別陣列等)'data'只讀標籤, 不展開(型別陣列之鍵為全部索引, 展開即配置同量之字串); 原始值恆可讀
-let probeReadable = (v, kind) => {
-    if (v === null || (typeof v !== 'object' && typeof v !== 'function')) {
-        return
+//故凡判定呼叫端給的值之站點, 於判斷函數回false(無效或不可讀, 二者判斷函數不分)時, 以本函數明確區分: 不可讀者拋出, 可讀而型別不符者(數字、字串等)不拋, 仍依判斷函數判為無效, 行為不變;
+//判斷函數回true(有效)時不檢核(其已讀成功, 其後之cloneDeep等照常讀取, 讀取次序與次數同修前, 有效資料之路徑零額外成本), 且檢核於判斷函數之後, 故不致把「第2次讀取才拋錯」之值由原通道改判為早退
+//opt為chkReadable之選項: 純量站點(opt.url/db/cl、opt.useCache/autoGenPk、option.returnList、pk、錯誤之message)不給, 只讀型別標籤; 資料站點見assertReadableData
+let assertReadable = (v, name, opt) => {
+    if (chkReadable(v, opt) !== '') {
+        throw mkErr(`invalid ${name}: must be a readable value`)
     }
-    if (kind === 'bol') {
-        if (typeof v === 'object') {
-            if (Reflect.has(v, Symbol.toStringTag)) {
-                Reflect.getOwnPropertyDescriptor(v, Symbol.toStringTag)
-            }
-            Object.prototype.toString.call(v)
-        }
-        return
+}
+
+
+//assertReadableData, 各寫入入口之data(iseobj與isearr所判者)之可讀性檢核: chkReadable之ownKeys(自有鍵, 並對標籤為[object Object]者沿原型鏈讀自有鍵與字串鍵描述子, 為iseobj之for...in之超集)
+//與elements:'first'(讀length, 且length為1時讀唯一元素之描述子, 同isearr);
+//ownKeys只於標籤為[object Object]者給: iseobj只對此標籤讀鍵(其餘標籤於isobj即回false, 不讀鍵), 而chkReadable之ownKeys對任何標籤皆讀Reflect.ownKeys,
+//型別陣列與Buffer之鍵為全部索引, 誤傳(可讀而型別不符, 早退)時一次展開同量之字串(1e7位元組約數秒、數百MB, 極端者因配置失敗被誤判為不可讀), 故以標籤先行決定選項(標籤之讀取拋錯者同為不可讀, 與chkReadable之標籤讀取同源);
+//chkReadable不呼叫存取器, 而isearr於length為1時會呼叫唯一元素之getter, 其拋錯者無從由chkReadable偵測, 故於此以try自讀一次(同修前探針之範圍), 拋錯者同為不可讀;
+//其餘元素與巢狀值由其後之cloneDeep讀取, 其拋錯者於try內走同一錯誤路徑(訊息為拋出者之原訊息)
+let assertReadableData = (v) => {
+    let tag = ''
+    try {
+        tag = Object.prototype.toString.call(v)
     }
-    let tag = Object.prototype.toString.call(v)
-    if (kind === 'str') {
-        if (tag === '[object String]') {
-            Reflect.get(v, 'length')
-        }
-        return
+    catch (err) {
+        throw mkErr('invalid data: must be a readable value')
     }
-    if (tag === '[object Object]') {
-        for (let k in v) {
-            Object.prototype.hasOwnProperty.call(v, k)
-        }
-    }
-    else if (tag === '[object Array]') {
-        if (v.length === 1) {
+    assertReadable(v, 'data', { ownKeys: tag === '[object Object]', elements: 'first' })
+    try {
+        if (tag === '[object Array]' && v.length === 1) {
             Reflect.get(v, 0)
         }
+    }
+    catch (err) {
+        throw mkErr('invalid data: must be a readable value')
     }
 }
 
@@ -123,6 +117,15 @@ let probeReadable = (v, kind) => {
  * 故僅單一行程內併發成立，跨行程併發不成立，詳見README之併發保證宣告。
  * 註: 數據以JSON存檔，Date存入後為ISO字串；insert、insertBulk與save寫入之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject，詳見各函數與README。
  *
+ * 主鍵(id)之未帶與給了(w-orm系列規則): 只有id為undefined、null、空字串(含鍵不存在)視為未帶，autoGenPk為true時自動產生，為false時整批reject(can not <入口> by data[k] without valid id when autoGenPk is false)；
+ * 其餘一律視為給了，給了而非字串者(數字、布林、物件、陣列、String包裝物件、Symbol、BigInt等)一律拒絕而不補值、不替換為新主鍵(主鍵為資料之身分，換成新值寫入事後無從對應)，不隨autoGenPk改變，
+ * 訊息為固定詞彙invalid id: not a string at [data[k].id]而不回顯值，失敗通道依各入口既有者: insert與insertBulk整批reject，save與del該筆ok為0並附err，selectByPk回null；
+ *
+ * 呼叫端給的值不可讀(讀取即拋錯，如拋錯之Symbol.toStringTag、已撤銷之Proxy、陷阱拋錯之Proxy、元素getter拋錯之陣列)者，於wsemi之判斷函數判為無效之分支以wsemi之chkReadable分辨，走原失敗通道並以固定詞彙拒絕，不被判為輸入無效而早退或當成選項預設值：
+ * 寫入入口(insert、insertBulk、save、del)之data與insert之option.returnList、selectByPk之pk為整批reject(error事件恰一次後reject，資料庫不變)，建構函式之opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk為同步throw，
+ * 訊息為invalid data: must be a readable value、invalid option.returnList: must be a readable value、invalid pk: must be a readable value、invalid opt.<名>: must be a readable value(不含拋出者之原訊息與值)；
+ * 可讀而型別不符者(數字、字串等)行為不變(輸入無效之早退、選項用預設、selectByPk回null)；
+ *
  * 字串良構(w-orm系列規則，wsemi之chkOrmStr與chkOrmData): lowdb以JSON檔存放，孤立代理字元(String.prototype.isWellFormed()為false)可保真，本身不致相撞，
  * 惟系列其他後端(UTF-8、BSON儲存)會改寫為U+FFFD，為使更換後端時資料行為一致，全系列一律於任何讀取與寫入之前拒收：
  * 1. 主鍵(id)不得含孤立代理字元與NUL，不隨autoGenPk改變；
@@ -149,7 +152,7 @@ let probeReadable = (v, kind) => {
  * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'；含孤立代理字元者建構時throw
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw
  * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
- * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject
+ * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶主鍵(本套件為id欄位，id為undefined、null、空字串或無此鍵)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵者將reject；給了而非字串之主鍵不論此選項一律拒絕而不替換
  * @param {Boolean} [opt.logDetail=false] 輸入診斷輸出是否改為含資料值與錯誤原文之完整細節(console.log(標籤, 細節)，僅供除錯)，須為true才生效，其餘值忽略，預設false；資料庫檔案位置仍以***遮罩
  * @param {Function} [opt.funLog=null] 輸入診斷輸出函數(label, safe, detail)，須為函數才生效，其餘值忽略，預設無；給予時診斷輸出只交給它而不寫console，safe為不含個資之摘要，detail為完整細節之遮罩拷貝(無細節時不傳此引數)，其拋錯或回傳reject之promise皆不影響操作
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
@@ -169,13 +172,13 @@ function WOrmLowdb(opt = {}) {
         }
     }
 
-    //選項值為呼叫端給的值: 判斷函數回false時先經probeReadable, 不可讀者(拋錯之Symbol.toStringTag、已撤銷之Proxy等)原樣拋出(建構時同步throw), 不被判斷函數吞成預設值(帳本R-WRITE-ERR-01規則7);
-    //可讀而型別不符者仍忽略並用預設
+    //選項值為呼叫端給的值: 判斷函數回false時先經assertReadable, 不可讀者(拋錯之Symbol.toStringTag、已撤銷之Proxy等)建構時同步throw固定詞彙之錯誤invalid opt.<名>: must be a readable value,
+    //不被判斷函數吞成預設值(帳本R-WRITE-ERR-01規則7); 可讀而型別不符者仍忽略並用預設
 
     //url
     let url = get(opt, 'url')
     if (!isestr(url)) {
-        probeReadable(url, 'str')
+        assertReadable(url, 'opt.url')
         url = './db.json'
     }
     else {
@@ -185,7 +188,7 @@ function WOrmLowdb(opt = {}) {
     //db
     let db = get(opt, 'db')
     if (!isestr(db)) {
-        probeReadable(db, 'str')
+        assertReadable(db, 'opt.db')
         db = 'worm'
     }
     else {
@@ -195,7 +198,7 @@ function WOrmLowdb(opt = {}) {
     //cl
     let cl = get(opt, 'cl')
     if (!isestr(cl)) {
-        probeReadable(cl, 'str')
+        assertReadable(cl, 'opt.cl')
         cl = 'test'
     }
     else {
@@ -205,7 +208,7 @@ function WOrmLowdb(opt = {}) {
     //useCache
     let useCache = get(opt, 'useCache')
     if (!isbol(useCache)) {
-        probeReadable(useCache, 'bol')
+        assertReadable(useCache, 'opt.useCache')
         useCache = false
     }
 
@@ -213,7 +216,7 @@ function WOrmLowdb(opt = {}) {
     //否則同一資料表將混入兩種來源之主鍵而難以追溯
     let autoGenPk = get(opt, 'autoGenPk')
     if (!isbol(autoGenPk)) {
-        probeReadable(autoGenPk, 'bol')
+        assertReadable(autoGenPk, 'opt.autoGenPk')
         autoGenPk = true
     }
 
@@ -472,9 +475,9 @@ function WOrmLowdb(opt = {}) {
             return m
         }
 
-        //m為呼叫端拋出之值之message(可為不可讀者, 如已撤銷之Proxy): 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出(帳本R-WRITE-ERR-01規則7);
+        //m為呼叫端拋出之值之message(可為不可讀者, 如已撤銷之Proxy): 判斷函數回false時以assertReadable區分, 不可讀者拋出固定詞彙之錯誤invalid err.message: must be a readable value(帳本R-WRITE-ERR-01規則7);
         //emitError包try而以固定訊息取代(同修前), 逐筆結果之procMsg不包try, 其拋出者經pmSeries使整批reject(同修前)
-        probeReadable(m, 'str')
+        assertReadable(m, 'err.message')
         return String(err)
     }
 
@@ -484,20 +487,29 @@ function WOrmLowdb(opt = {}) {
         return isOwnErr(err) ? msg : diag.mask(msg)
     }
 
+    //isNoPk, 主鍵是否為「未帶」(帳本R-PKGIVEN-01): 只有undefined、null與空字串(含鍵不存在)為未帶;
+    //其餘一律為「給了」, 給了而非字串者(數字、布林、物件、陣列、String包裝物件、Symbol、BigInt等)不補值亦不替換, 留給後續chkPk依固定詞彙拒絕(invalid id: not a string at [data[k].id]),
+    //因主鍵為資料之身分, 呼叫端給了錯值卻換成新id寫入, 事後無從對應;
+    //判定不得改用isestr等語意隨wsemi版本改變之判斷函數(1.9.69起isestr只收原始值, 原寫法即因此把String包裝物件靜默換成新id), 一律以===比對, 不呼叫被檢測值之任何方法或陷阱
+    let isNoPk = (id) => {
+        return id === undefined || id === null || id === ''
+    }
+
     //procPk, 依autoGenPk處理各數據之主鍵, 供insert、insertBulk與save共用
-    //autoGenPk為true時補值; 為false時不補值, 未帶有效主鍵者屬呼叫端未履行契約, 拋出為整批性錯誤,
-    //且檢查於任何寫入之前完成, 故不會有部份筆數已寫入而整批失敗之情形
+    //autoGenPk為true時對未帶主鍵者補值; 為false時不補值, 未帶主鍵者屬呼叫端未履行契約, 拋出為整批性錯誤,
+    //且檢查於任何寫入之前完成, 故不會有部份筆數已寫入而整批失敗之情形;
+    //給了主鍵者(不論是否為字串、不論autoGenPk)一律原樣通過, 其格式由其後之chkPk(getWellFormedMsg)檢核, 失敗通道依各入口既有者(insert與insertBulk整批reject, save逐筆ok為0), 不隨autoGenPk改變
     let procPk = (data, fnName) => {
         if (autoGenPk) {
             return map(data, function(v) {
-                if (!isestr(v.id)) {
+                if (isNoPk(v.id)) {
                     v.id = genIDSeq()
                 }
                 return v
             })
         }
         each(data, function(v, k) {
-            if (!isestr(get(v, 'id'))) {
+            if (isNoPk(get(v, 'id'))) {
                 throw mkErr(`can not ${fnName} by data[${k}] without valid id when autoGenPk is false`)
             }
         })
@@ -677,7 +689,7 @@ function WOrmLowdb(opt = {}) {
      * 提供本函數係為與其他w-orm系列套件維持同一組函數
      *
      * @memberOf WOrmLowdb
-     * @param {String} pk 輸入主鍵值字串，本套件之主鍵欄位為id
+     * @param {String} pk 輸入主鍵值字串，本套件之主鍵欄位為id；給了而非字串(數字、String包裝物件等)或不合格(空字串、含NUL或孤立代理字元)者視為無效主鍵而回傳null，讀取即拋錯之值(如已撤銷之Proxy)則reject(invalid pk: must be a readable value)
      * @returns {Promise} 回傳Promise，resolve回傳數據物件，若無此主鍵或主鍵值無效則回傳null，reject回傳錯誤訊息
      */
     async function selectByPkCore(pk) {
@@ -687,9 +699,10 @@ function WOrmLowdb(opt = {}) {
         let res = null
         try {
 
-            //check, pk為呼叫端給的值: isestr回false時以probeReadable區分, 不可讀者(拋錯之Symbol.toStringTag、已撤銷之Proxy等)原樣拋出, 走catch之error事件後reject, 不被判為無效主鍵而回null(帳本R-WRITE-ERR-01規則7)
+            //check, pk為呼叫端給的值: isestr回false時以assertReadable區分, 不可讀者(拋錯之Symbol.toStringTag、已撤銷之Proxy等)拋出invalid pk: must be a readable value, 走catch之error事件後reject, 不被判為無效主鍵而回null(帳本R-WRITE-ERR-01規則7);
+            //可讀而非字串者(數字、String包裝物件等, 即給了而非字串)維持回null(本入口對無效主鍵之既有通道, 帳本R-PKGIVEN-01)
             if (!isestr(pk)) {
-                probeReadable(pk, 'str')
+                assertReadable(pk, 'pk')
 
                 //未給有效主鍵值視為查無數據
                 return null
@@ -746,9 +759,9 @@ function WOrmLowdb(opt = {}) {
      * 資料庫檔內既有之範圍外Date字串不遷移，仍無法以Date條件正確比較，詳見README
      *
      * @memberOf WOrmLowdb
-     * @param {Object|Array} data 輸入數據物件或陣列
+     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)
      * @param {Object} [option={}] 輸入設定物件，預設為{}
-     * @param {Boolean} [option.returnList=false] 輸入是否改回傳逐筆結果布林值，預設false。給true時回傳與輸入等長保序之陣列，各筆為{n,nInserted,ok}，nInserted為1即該筆為新增；聚合計數只回答有幾筆是新的，逐筆結果方能回答是哪幾筆，供下游僅對新資料執行昂貴動作。回傳形式由呼叫點靜態決定，共用之結果處理程式碼不可跨不同取值之呼叫點混用
+     * @param {Boolean} [option.returnList=false] 輸入是否改回傳逐筆結果布林值，預設false；非布林值忽略並用預設，讀取即拋錯者整批reject(invalid option.returnList: must be a readable value)。給true時回傳與輸入等長保序之陣列，各筆為{n,nInserted,ok}，nInserted為1即該筆為新增；聚合計數只回答有幾筆是新的，逐筆結果方能回答是哪幾筆，供下游僅對新資料執行昂貴動作。回傳形式由呼叫點靜態決定，共用之結果處理程式碼不可跨不同取值之呼叫點混用
      * @returns {Promise} 回傳Promise，resolve依returnList回傳插入結果：預設回傳聚合物件{n,nInserted,ok}，n為輸入筆數、nInserted為實際插入筆數；returnList為true時回傳逐筆陣列，各筆n恆為1(主鍵命中或經插入)、ok恆為1(insert之錯誤皆屬整批性而reject，不進逐筆)；reject回傳錯誤訊息
      */
     async function insertCore(data, option = {}) {
@@ -761,15 +774,15 @@ function WOrmLowdb(opt = {}) {
             //returnList, 讀取呼叫端傳入之option、判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01)
             let returnList = get(option, 'returnList')
             if (!isbol(returnList)) {
-                //帳本R-WRITE-ERR-01規則7: option.returnList不可讀者原樣拋出, 不被isbol判為預設值
-                probeReadable(returnList, 'bol')
+                //帳本R-WRITE-ERR-01規則7: option.returnList不可讀者拋出invalid option.returnList: must be a readable value, 不被isbol判為預設值
+                assertReadable(returnList, 'option.returnList')
                 returnList = false
             }
 
             //check, 輸入無效者直接回傳, 不經catch之後之收尾且不發事件;
-            //data為呼叫端給的值: 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
+            //data為呼叫端給的值: 判斷函數回false時以assertReadableData區分, 不可讀者拋出invalid data: must be a readable value而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
             if (!iseobj(data) && !isearr(data)) {
-                probeReadable(data, 'data')
+                assertReadableData(data)
                 if (returnList) {
                     //輸入無效, 對齊save與del之空陣列規定
                     return []
@@ -894,7 +907,7 @@ function WOrmLowdb(opt = {}) {
      * 註: 數據內任何深度之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject且不寫入任何一筆，規則同insert，詳見insert與README
      *
      * @memberOf WOrmLowdb
-     * @param {Object|Array} data 輸入數據物件或陣列
+     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)
      * @returns {Promise} 回傳Promise，resolve回傳插入結果物件{n,nInserted,ok}，n為輸入筆數、nInserted成功時恆等於n，任一筆主鍵已存在則reject回傳錯誤訊息
      */
     async function insertBulkCore(data) {
@@ -905,9 +918,9 @@ function WOrmLowdb(opt = {}) {
         try {
 
             //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件;
-            //data為呼叫端給的值: 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
+            //data為呼叫端給的值: 判斷函數回false時以assertReadableData區分, 不可讀者拋出invalid data: must be a readable value而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
             if (!iseobj(data) && !isearr(data)) {
-                probeReadable(data, 'data')
+                assertReadableData(data)
                 return {
                     n: 0,
                     nInserted: 0,
@@ -1004,7 +1017,7 @@ function WOrmLowdb(opt = {}) {
      * autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合併與覆寫路徑寫入之Date皆來自已檢核之數據，已存在於資料庫之字串不檢核
      *
      * @memberOf WOrmLowdb
-     * @param {Object|Array} data 輸入數據物件或陣列
+     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者該筆ok為0並附err(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)
      * @param {Object} [option={}] 輸入設定物件，預設為{}
      * @param {boolean} [option.autoInsert=true] 輸入是否於儲存時發現原本無數據，則自動改以插入處理，預設為true
      * @returns {Promise} 回傳Promise，resolve回傳與輸入等長之儲存結果陣列，各筆為{n,nInserted,nModified,ok}，n為主鍵命中筆數，單筆失敗者ok為0並附err，reject回傳錯誤訊息
@@ -1017,9 +1030,9 @@ function WOrmLowdb(opt = {}) {
         try {
 
             //check, 判定data、cloneDeep與讀取呼叫端傳入之option皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件;
-            //data為呼叫端給的值: 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
+            //data為呼叫端給的值: 判斷函數回false時以assertReadableData區分, 不可讀者拋出invalid data: must be a readable value而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
             if (!iseobj(data) && !isearr(data)) {
-                probeReadable(data, 'data')
+                assertReadableData(data)
                 return []
             }
 
@@ -1227,7 +1240,7 @@ function WOrmLowdb(opt = {}) {
      * 刪除數據，依主鍵刪除
      *
      * @memberOf WOrmLowdb
-     * @param {Object|Array} data 輸入數據物件或陣列
+     * @param {Object|Array} data 輸入數據物件或陣列；id非字串(含未給)者該筆ok為0並附err，讀取即拋錯者整批reject(invalid data: must be a readable value)
      * @returns {Promise} 回傳Promise，resolve回傳與輸入等長之刪除結果陣列，各筆為{n,nDeleted,ok}，n為主鍵命中筆數，單筆失敗或未給有效id者ok為0並附err，reject回傳錯誤訊息
      */
     async function delCore(data) {
@@ -1238,9 +1251,9 @@ function WOrmLowdb(opt = {}) {
         try {
 
             //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件;
-            //data為呼叫端給的值: 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
+            //data為呼叫端給的值: 判斷函數回false時以assertReadableData區分, 不可讀者拋出invalid data: must be a readable value而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
             if (!iseobj(data) && !isearr(data)) {
-                probeReadable(data, 'data')
+                assertReadableData(data)
                 return []
             }
 

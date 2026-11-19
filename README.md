@@ -91,6 +91,29 @@ JavaScript 字串可含孤立代理字元(lone surrogate，即成對代理被拆
 
 已知限制：`String` 包裝物件(`new String('...')`)僅檢核其字串值、不解包；`toJSON` 或自訂序列化之輸出不檢核。
 
+### 主鍵之未帶與給了、不可讀之輸入 (Given primary key and unreadable input)
+
+**主鍵 `id` 只有三種「未帶」**：`undefined`、`null`、空字串(含鍵不存在)。`autoGenPk` 為 `true`(預設)時自動產生；為 `false` 時整批 reject(`can not <入口> by data[<k>] without valid id when autoGenPk is false`，`save` 亦同)。
+
+**「給了」而非字串者一律拒絕，不補值、不替換為新主鍵**(數字、布林、物件、陣列、`String` 包裝物件、`Symbol`、`BigInt`、`Date`、函數等)：主鍵為資料之身分，呼叫端給了錯值卻被換成新主鍵寫入，事後無從對應。不隨 `autoGenPk` 改變，訊息為固定詞彙 `invalid id: not a string at [data[<k>].id]`，不回顯值；失敗通道依各入口既有者：
+
+| 呼叫 | 給了而非字串之 `id` |
+|---|---|
+| `insert`、`insertBulk` | 整批 reject，不寫入任何一筆；於 reject 之前發出一次 `error` 事件，不發 `change` |
+| `save`、`del` | 該筆 `ok: 0` 附 `err`(`save` 不再補新主鍵插入)，同批其他筆照常處理 |
+| `selectByPk` | 回傳 `null`(不 reject、不發事件) |
+
+**呼叫端給的值不可讀**(讀取即拋錯：拋錯之 `Symbol.toStringTag`、已撤銷之 `Proxy`、陷阱拋錯之 `Proxy`、唯一元素之 getter 拋錯之陣列等)者，不被當成「輸入無效」而早退、也不被當成選項預設值，而依原失敗通道以固定詞彙拒絕(不含拋出者之原訊息與值)；可讀而型別不符者(數字、字串等)行為不變：
+
+| 輸入 | 不可讀時 |
+|---|---|
+| `insert`、`insertBulk`、`save`、`del` 之 `data` | 整批 reject(`invalid data: must be a readable value`)，`error` 事件恰一次，資料庫不變 |
+| `insert` 之 `option.returnList` | 整批 reject(`invalid option.returnList: must be a readable value`) |
+| `selectByPk` 之 `pk` | reject(`invalid pk: must be a readable value`) |
+| `opt.url`、`opt.db`、`opt.cl`、`opt.useCache`、`opt.autoGenPk` | 建構時同步 throw(`invalid opt.<名>: must be a readable value`) |
+
+資料內巢狀之值(含 `id` 值本身為不可讀者)由複製資料時讀取，其拋錯者同為整批 reject，訊息為拋出者之原訊息，不寫入亦不替換。`option` 與建構時 `opt` 容器本身不可讀者(如已撤銷之 `Proxy`)於讀取其鍵時拋出，通道不變(整批 reject 並發出一次 `error` 事件、建構時同步 throw)，訊息同為拋出者之原訊息。
+
 ### 診斷輸出與錯誤值之遮罩：`opt.logDetail` 與 `opt.funLog` (Diagnostic output)
 
 遮罩與診斷輸出之實作為 **wsemi 之共用函數**(`getDiag`、`getDiagSecrets`、`maskDiagText`、`maskDiagCopy`、`maskDiagErr`、`getDiagBriefErr`)，本套件只宣告「秘密來源(資料庫檔案位置)、`safeKeys` 與呼叫點」，不自行實作遮罩。選項語意、摘要規則、細節拷貝之形態處置與上限、已知限制，以 wsemi 之 `getDiag` 等函數之 JSDoc 與其規則帳本為準，本節只述本套件之接線。
@@ -141,6 +164,8 @@ let wf = WOrmLowdb({
 - 改為 reject(寫入 Date 範圍，1.0.34 起)：`insert`、`insertBulk`、`save` 寫入之數據內任何深度之 `Date` 年份小於 0 或大於 9999(如以 `new Date(8.64e15)` 作「永不過期」哨兵)，原本照存為 `+yyyyyy-…`、`-yyyyyy-…` 字串(其後會被 `{ t: { $lt: 現在 } }` 因字典序命中而遭 `delAll` 刪除)，現整批 reject，訊息為 `invalid data: Date year is out of range 0000-9999 at [<路徑>]`；請改用 `null` 或 `new Date('9999-12-31T23:59:59.999Z')`。既有資料不遷移，仍有字典序風險，請自行清理或改寫(見上方「寫入數據之 Date」)。
 - 錯誤訊息為 `invalid find: <原因> at [<路徑>]`；原本由 `mingo` 拋出錯誤者，現統一為此訊息。
 - 改為 reject(字串良構)：主鍵含孤立代理字元或 NUL；寫入資料之字串值或鍵名含孤立代理字元；`opt.url`、`opt.db`、`opt.cl` 含孤立代理字元(建構時 throw)。原本 lowdb 以 JSON 保真而照存，現為系列一致而拒收，見上節「字串良構」。`del` 未給有效 `id` 之 `err` 由 `can not delete by invalid id[<值>]` 改為 `invalid id: <原因> at [data[<k>].id]`(不回顯值)。
+- 改為 reject(主鍵給了而非字串)：`insert`、`insertBulk`、`save` 之數據 `id` 為給了而非字串者(如 `5`、`new String('a')`、`{}`、`true`；只有 `undefined`、`null`、空字串視為未帶)，原本 `autoGenPk` 為 `true` 時靜默換成新產生之主鍵寫入(`insert` 回傳 `ok: 1`，呼叫端以為以 `5` 存入而實際存為新主鍵)，`autoGenPk` 為 `false` 時以 `can not <入口> by data[<k>] without valid id when autoGenPk is false` 拒絕；現一律拒絕而不替換，訊息為 `invalid id: not a string at [data[<k>].id]`(`insert`、`insertBulk` 整批 reject，`save` 該筆 `ok: 0` 附 `err`；`save` 於 `autoGenPk` 為 `false` 時原為整批 reject，現為逐筆)，見上節「主鍵之未帶與給了」。
+- 變更(不可讀之輸入，訊息改固定詞彙)：呼叫端給的 `data`、`option.returnList`、`pk`、`opt.url`/`db`/`cl`/`useCache`/`autoGenPk` 為讀取即拋錯之值者，原本拒絕時之訊息為拋出者之原訊息(如 `ownKeys-boom`、`Cannot perform 'Object.prototype.toString' on a proxy that has been revoked`)，現為 `invalid <名稱>: must be a readable value`(不含原訊息與值)；失敗通道(整批 reject 與 `error` 事件恰一次、建構時 throw)不變。可讀性改以 wsemi 之 `chkReadable` 判定(純量選項與 `pk` 只讀型別標籤；`data` 於標籤為一般物件者讀自有鍵與原型鏈，並讀陣列之長度與唯一元素之描述子，對 `Uint8Array`、`Buffer`、`Map` 等其餘標籤不讀鍵、不展開)，故邊界略有調整：布林選項(`opt.useCache`/`autoGenPk`、`option.returnList`)為已撤銷之函數 `Proxy` 者，原本被當成預設值，現為不可讀而拒絕；布林選項為 `has` 陷阱拋錯之 `Proxy` 或自有 `Symbol.toStringTag` 之描述子讀取拋錯之 `Proxy` 者，原本被判為不可讀，現為可讀而型別不符(用預設值)；字串選項與 `pk` 為 `Symbol.toStringTag` 為 `String` 而 `length` 拋錯之物件者，原本被判為不可讀，現為可讀而型別不符(用預設值、`selectByPk` 回 `null`)；空陣列 `Proxy` 之 `getOwnPropertyDescriptor` 陷阱於讀取 `length` 時拋錯者作為 `data`，原本被當成輸入無效而早退，現為不可讀而拒絕。資料內巢狀值之拋錯(由複製資料時讀取)維持原訊息。
 - 變更(診斷輸出)：`change` 或 `error` 事件之訂閱函數拋錯時，console 輸出由原本的 `console.log(拋出之值)`(整個錯誤含訊息與堆疊，可能夾帶資料值與 `id`)改為 `change handler threw { mode, errType }`(`error handler threw` 同)。**要看原文：加 `logDetail: true`(輸出為遮罩拷貝，`Error` 與純值之文字與舊版相同；資料庫檔案位置以 `***` 取代，限制見上節)，或由 `funLog` 取得。** 只有輸出變動，各操作之 resolve/reject 內容、`change` 與 `error` 事件之參數及發出時機皆不變。新增選項 `opt.logDetail`、`opt.funLog`，見上節「診斷輸出」。(其中 `logDetail` 之輸出格式已由下一條改變。)
 - 變更(診斷輸出與錯誤值之遮罩改用 wsemi 共用實作，不保留舊行為、不設別名)：本套件不再自行實作遮罩與診斷輸出(刪除 `src/getDiag.mjs`，其為內部模組、未對外匯出；若你曾直接引用 `w-orm-lowdb/src/getDiag.mjs` 將失效)，改用 wsemi 之 `getDiag` 等函數。對外可觀察之變化：
   1. `opt.logDetail: true` 之輸出由「只輸出細節、不加標籤」(同舊版 `console.log(拋出之值)`)改為 `console.log(標籤, 細節)`，如 `change handler threw Error: …`；細節為遮罩拷貝，自訂 `Error` 子類別於 `util.inspect` 顯示為 `Error`(類別名保留於副本之 `name` 屬性)。

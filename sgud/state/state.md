@@ -2,8 +2,8 @@
 
 本檔記 w-orm-lowdb 當前已開發功能之最新狀態(各功能做到哪裡、對應之規則帳本條目與測試檔、已知缺口與待辦、最近一次驗證或發布之版本).只記現況、不寫過程,過程寫入 `sgud/exp/experience.md`;規則細節見 `sgud/rule/rulebook.md`.
 
-- 套件版本: `package.json` 為 1.0.67(版號與發布由使用者統籌,agent 不改);依賴 `wsemi ^1.9.69`(診斷與遮罩共用實作自 1.9.31 起;判斷函數自 1.9.69 起對讀取即拋錯之值回 `false` 而不拋錯,本庫以可讀性探針承接,見下 R-WRITE-ERR-01 規則 7).
-- 最近一次全套驗證: 2026-11-19(olw492i,wsemi 1.9.69),`npm test` 等價指令(quiet-run,`--lock`)**4148 passing / 210 pending / 0 failing**(較連動跟跑之 3837 passing + 12 failing 多出之 299 案為 `unit-readable-probe`;12 failing 為 `unit-write-pre-error` 之讀取即拋錯案,現轉綠);前次 2026-11-01(orm233,wsemi 1.9.36),`npm test`(quiet-run,`--lock`)**3849 passing / 210 pending / 0 failing**(較 3846 多出之 3 案為處置表每個 `na` 項動態生成之 `[靜態] … 不適用本套件`);前次 2026-10-29(mig-lowdb),`npm test`(quiet-run,`--lock`)**3846 passing / 210 pending / 0 failing**(測試本體約 19 秒);210 pending 為 `unit-wellformed` 之 GridFS 案(略過並以計數斷言).
+- 套件版本: `package.json` 為 1.0.69(版號與發布由使用者統籌,agent 不改);依賴 `wsemi ^1.9.70`(診斷與遮罩共用實作自 1.9.31 起;判斷函數自 1.9.69 起對讀取即拋錯之值回 `false` 而不拋錯且只收原始值,本庫自 2026-11-20 起以 wsemi `chkReadable` 承接不可讀之輸入〔`assertReadable`/`assertReadableData`,固定詞彙〕,以 `===` 判定主鍵「未帶」〔`isNoPk`〕,見下 R-WRITE-ERR-01 規則 7 與 R-PKGIVEN-01).
+- 最近一次全套驗證: 2026-11-20(oro557a,wsemi 1.9.70),`npm test`(quiet-run,`--lock`)**4383 passing / 210 pending / 0 failing**(較前次 4148 多出之 235 案: `unit-pk-given` 205、`unit-readable-probe` 增 30);變異 38 項 37 轉紅、1 等價存活;前次 2026-11-19(olw492i,wsemi 1.9.69),`npm test` 等價指令(quiet-run,`--lock`)**4148 passing / 210 pending / 0 failing**(較連動跟跑之 3837 passing + 12 failing 多出之 299 案為 `unit-readable-probe`;12 failing 為 `unit-write-pre-error` 之讀取即拋錯案,現轉綠);前次 2026-11-01(orm233,wsemi 1.9.36),`npm test`(quiet-run,`--lock`)**3849 passing / 210 pending / 0 failing**(較 3846 多出之 3 案為處置表每個 `na` 項動態生成之 `[靜態] … 不適用本套件`);前次 2026-10-29(mig-lowdb),`npm test`(quiet-run,`--lock`)**3846 passing / 210 pending / 0 failing**(測試本體約 19 秒);210 pending 為 `unit-wellformed` 之 GridFS 案(略過並以計數斷言).
 - 語料 wire 案處置(2026-11-01,orm233): `unit-diaglog-wire` 之 `WIRE` 對 wsemi 1.9.36 語料 wire 案 23 個全數登錄(D 9、S 1、L 1、static 1、R 1、R-fs 1、na 9);新增之 A11(`genDiagFunLog` 之 `opt.safeKeys`)、C14(`getDiagBriefErr` 之 `types`,pg `DatabaseError` 形態)、U22(`getDiagSecrets` 之 `conns`)皆判不適用: `src/WOrmLowdb.mjs` 只引入 `getDiag`(:25)與 `getDiagSecrets`(:26),兩者不引入 `genDiagFunLog`;宣告為 `paths` 與 `safeKeys:['mode']`(:186-189),無 `codes`、`types`、`conns`.
 - 測試目錄: `test/*.test.mjs` 皆為 `unit-` 前綴(以真實 JSON 檔驗證,無 HTTP/RPC 端點);共用 `test/lib/`(`mkObserver.mjs`、`leaves.mjs`、`procConcurrency.mjs`)與 `test/tools/`(`diagScenario.mjs`、`diagGolden.json`).
 
@@ -15,7 +15,8 @@
 | 條件(find)白名單與 Date 轉 ISO、範圍外 Date fail-closed | 已套(2026-10-17、10-19) | R-FIND-01、R-FIND-02 | `unit-find-whitelist` |
 | 寫入數據之 Date 範圍檢核(0000–9999) | 已套(2026-10-19) | R-DATE-01 | `unit-date-write` |
 | 寫入入口之前置處理移入 `try`(error 事件恰一次) | 已套(2026-10-20) | R-WRITE-ERR-01 | `unit-write-pre-error` |
-| 呼叫端給的值之可讀性探針(wsemi 1.9.69 判斷函數不拋錯後,讀取即拋錯之 `data`、`pk`、`option.returnList`、建構選項、拋出值之 `message` 仍走原失敗通道) | 已套(2026-11-19,olw492i) | R-WRITE-ERR-01 規則 7 | `unit-write-pre-error`(原 12 案轉綠)、`unit-readable-probe`(299 案) |
+| 呼叫端給的值之可讀性檢核(wsemi 1.9.69 判斷函數不拋錯後,讀取即拋錯之 `data`、`pk`、`option.returnList`、建構選項、拋出值之 `message` 仍走原失敗通道,訊息為固定詞彙 `invalid <名稱>: must be a readable value`) | 已套(2026-11-19,olw492i 本地探針;2026-11-20,oro557a 改用 wsemi `chkReadable`、移除本地探針,第 557 項) | R-WRITE-ERR-01 規則 7(含〈第 557 項修訂〉) | `unit-write-pre-error`、`unit-readable-probe` |
+| 主鍵「給了而非字串」即拒絕(`insert`/`insertBulk` 整批 reject、`save` 逐筆 `ok:0`、不隨 `autoGenPk`;「未帶」只有 `undefined`/`null`/`''`) | 已套(2026-11-20,oro557a,第 557 項) | R-PKGIVEN-01 | `unit-pk-given`(205 案)、`unit-wellformed`(一案改 `{ id: null }`) |
 | 字串良構(主鍵、寫入資料、`opt.url`/`db`/`cl`) | 已套(2026-10-20) | R-ORMSTR-01 | `unit-wellformed` |
 | 主鍵存在性對照表改 `Map` | 已套(2026-10-21) | R-PKMAP-01 | `unit-protokey` |
 | 診斷輸出與對外錯誤值之遮罩(wsemi 共用實作)、`opt.logDetail`/`opt.funLog` | 已套(2026-10-29,mig-lowdb;第 161 項,取代第 153 項之自製 `getDiag.mjs`) | R-DIAG-01(依 dspec〈診斷輸出與遮罩〉與 wsemi R-DIAG-01) | `unit-diaglog-wire`(接線 46 案)、`unit-diaglog-wo`(WOrmLowdb 整體 25 案) |

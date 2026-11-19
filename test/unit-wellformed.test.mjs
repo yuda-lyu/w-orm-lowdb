@@ -541,11 +541,12 @@ describe('wellformed', function() {
             assert.strict.equal(fs.readdirSync(root).filter((n) => n.startsWith('ctor-nocreate')).length, 0)
         })
 
-        it('autoGenPk為true時未帶有效id之筆先補主鍵再檢核: 照常寫入; 其資料不合格者仍拒收(訊息為資料路徑)', async function() {
+        //第557項(帳本R-PKGIVEN-01): 只有鍵不存在、undefined、null、空字串為未帶id; 數字等給了而非字串者不補值而拒絕, 見unit-pk-given
+        it('autoGenPk為true時未帶id之筆先補主鍵再檢核: 照常寫入; 其資料不合格者仍拒收(訊息為資料路徑)', async function() {
             for (let fn of ['insert', 'insertBulk', 'save']) {
                 let wo = freshBackend()
                 try {
-                    let r = await wo[fn]([{ name: 'a' }, { id: '', name: 'b' }, { id: 12345, name: 'c' }])
+                    let r = await wo[fn]([{ name: 'a' }, { id: '', name: 'b' }, { id: null, name: 'c' }])
                     if (fn === 'save') {
                         assert.strict.deepStrictEqual(r.map((v) => v.ok), [1, 1, 1], fn)
                     }

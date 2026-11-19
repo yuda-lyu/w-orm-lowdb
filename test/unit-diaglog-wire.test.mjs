@@ -562,9 +562,9 @@ describe('diaglog-wire', function() {
             assert.strictEqual(count(code, /err: getErrMsg\(/g), 0)
         })
 
-        it('[靜態] 固定詞彙之錯誤: 以mkErr建立者恰6處throw(chkDataDate、procPk、procWellFormed、insertBulk主鍵衝突、save逐筆之前置檢核與合併階段各1), 其餘new Error僅3處(建構檢核、procFind之isoFind、select不可達之固定訊息)', function() {
+        it('[靜態] 固定詞彙之錯誤: 以mkErr建立者恰9處throw(chkDataDate、procPk、procWellFormed、insertBulk主鍵衝突、save逐筆之前置檢核與合併階段各1, 及第557項之可讀性檢核assertReadable 1與assertReadableData之標籤讀取、唯一元素自讀各1), 其餘new Error僅3處(建構檢核、procFind之isoFind、select不可達之固定訊息)', function() {
             let code = stripComments(fs.readFileSync(srcFile, 'utf8'))
-            assert.strictEqual(count(code, /throw mkErr\(/g), 6)
+            assert.strictEqual(count(code, /throw mkErr\(/g), 9)
             let news = code.split('\n').filter((line) => /new Error\(/.test(line)).map((v) => v.trim())
             let prefixes = [
                 'let err = new Error(msg)',

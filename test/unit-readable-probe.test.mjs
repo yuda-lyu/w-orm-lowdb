@@ -6,12 +6,14 @@ import WOrm from '../src/WOrmLowdb.mjs'
 import { mkObserver } from './lib/mkObserver.mjs'
 
 
-//呼叫端給的值之可讀性探針(帳本R-WRITE-ERR-01規則7; 來源: wsemi 1.9.69起判斷函數對讀取即拋錯之值回false而不拋錯)
+//呼叫端給的值之可讀性檢核(帳本R-WRITE-ERR-01規則7; 來源: wsemi 1.9.69起判斷函數對讀取即拋錯之值回false而不拋錯; 第557項起改用wsemi chkReadable, 訊息改固定詞彙)
 //讀取即拋錯之值(拋錯之Symbol.toStringTag、已撤銷之Proxy、陷阱拋錯之Proxy、元素getter拋錯之陣列)修前(wsemi 1.9.68以前)因判斷函數拋錯而走原失敗通道:
-//  寫入入口(insert、insertBulk、save、del)與selectByPk為「error事件恰一次後reject、不發change、資料庫不變」, 建構函式為同步throw原錯誤;
+//  寫入入口(insert、insertBulk、save、del)與selectByPk為「error事件恰一次後reject、不發change、資料庫不變」, 建構函式為同步throw;
 //1.9.69起判斷函數不拋錯, 此類值被當成「輸入無效」(寫入入口回n為0或[]、selectByPk回null, 皆不發事件)或選項之預設值, 通道失效;
-//本檔驗各站點於判斷函數回false後以探針區分「可讀而無效」與「不可讀」, 通道恢復; 探針之讀取範圍依站點(str: isestr、bol: isbol、data: iseobj與isearr)各取該判斷函數修前所讀取者, 不多不少,
-//故每種值於各站點種類之期望不同(KINDS之str、bol、data欄), 期望皆依wsemi 1.9.68(修前)之實測行為而定; 另含對照組: 可讀而型別不符者行為不變、探針不擴大、讀取次序與次數同修前
+//本檔驗各站點於判斷函數回false後以wsemi chkReadable區分「可讀而無效」與「不可讀」, 通道恢復, 不可讀者之訊息為固定詞彙invalid <名稱>: must be a readable value(不含拋出者之原訊息與值);
+//檢核之讀取範圍(chkReadable之規則二.4對照): 純量站點(str: opt.url/db/cl、pk、錯誤之message; bol: opt.useCache/autoGenPk、option.returnList)只讀型別標籤(物件與函數皆讀),
+//資料站點(data: iseobj與isearr)為ownKeys(自有鍵與原型鏈, iseobj之超集)加elements:'first'(length與唯一元素之描述子)再加呼叫端自讀唯一元素(chkReadable不呼叫存取器),
+//故每種值於各站點種類之期望不同(KINDS之str、bol、data欄), 期望依chkReadable之文件化讀取範圍手寫(不由被測函數產生); 另含對照組: 可讀而型別不符者行為不變、不擴大、讀取次序與次數同修前
 describe('readable-probe', function() {
     let url = './test/_tmp/readable-probe'
 
@@ -20,8 +22,10 @@ describe('readable-probe', function() {
     }
 
     //hostile values, 每次呼叫重建(含有狀態者)
-    //str/bol: 於isestr(str)、isbol(bol)站點是否不可讀(拋出msg); data: 於寫入入口之data為'reject'(判斷函數回false而探針拋出, 或判斷函數讀取成功而其後cloneDeep於try內拋出, 皆走原通道)或'early'(修前即可讀而無效, 早退, 不變)
-    //msg為拋出者之原訊息(字串全等, 或RegExp比對)
+    //str/bol: 純量站點(isestr、isbol判為false之分支)是否不可讀(chkReadable回非空, 拋出固定詞彙invalid <名稱>: must be a readable value);
+    //data: 於寫入入口之data為'reject'(資料站點檢核判為不可讀而拋出固定詞彙, 即dfixed為true; 或判斷函數讀取成功而其後cloneDeep於try內拋出拋出者之原訊息msg, 即dfixed為false, 皆走原通道)或'early'(可讀而無效, 早退, 不變)
+    //msg為拋出者之原訊息(字串全等, 或RegExp比對), 僅於dfixed為false之data站點出現; dfixed於KINDS定義之後依DATA_NATURAL推得
+    let FIXED = (name) => `invalid ${name}: must be a readable value`
     let revoked = (target) => () => {
         let r = Proxy.revocable(target(), {})
         r.revoke()
@@ -102,13 +106,14 @@ describe('readable-probe', function() {
                 },
             }),
         },
-        //isbol(修前lodash isBoolean)另讀Symbol.toStringTag之has陷阱與其自有屬性描述子, isestr(修前標籤式isstr)不讀
-        { key: 'Proxy whose has trap throws', msg: 'has-boom', str: false, bol: true, data: 'reject', mk: () => new Proxy({ id: 'z1' }, { has: boom('has-boom') }) },
+        //修前(wsemi 1.9.68)isbol(lodash isBoolean)另讀Symbol.toStringTag之has陷阱與其自有屬性描述子; 現行isbol只收原始值而chkReadable預設只讀標籤, 故二者皆為可讀(bol: false);
+        //資料站點: 判斷函數(iseobj)讀取成功而有效, 其後cloneDeep讀取(lodash getTag之in運算)觸發has陷阱而拋出原訊息(natural)
+        { key: 'Proxy whose has trap throws', msg: 'has-boom', str: false, bol: false, data: 'reject', mk: () => new Proxy({ id: 'z1' }, { has: boom('has-boom') }) },
         {
             key: 'Proxy with an own toStringTag whose descriptor read throws',
             msg: 'gopdtag-boom',
             str: false,
-            bol: true,
+            bol: false,
             data: 'early', //自有標籤為'X'(非Object與Array), 資料型判斷函數只讀標籤即判為無效, 不讀屬性描述子
             mk: () => new Proxy({ id: 'z1', [Symbol.toStringTag]: 'X' }, {
                 getOwnPropertyDescriptor(t, k) {
@@ -119,8 +124,8 @@ describe('readable-probe', function() {
                 },
             }),
         },
-        //isestr(修前)於標籤為String者另讀length; 資料型站點之判斷函數不讀, 為可讀而無效(早退)
-        { key: 'object with a String tag whose length getter throws', msg: 'strlen-boom', str: true, bol: false, data: 'early', mk: () => ({ [Symbol.toStringTag]: 'String', id: 'z1', get length() { throw new Error('strlen-boom') } }) },
+        //修前isestr(標籤式isstr)於標籤為String者另讀length; 現行isestr只收原始值而chkReadable預設只讀標籤, length不讀, 故為可讀(str: false, 規則二.4對照: chkReadable(v)=標籤); 資料型站點之判斷函數不讀, 為可讀而無效(早退)
+        { key: 'object with a String tag whose length getter throws', msg: 'strlen-boom', str: false, bol: false, data: 'early', mk: () => ({ [Symbol.toStringTag]: 'String', id: 'z1', get length() { throw new Error('strlen-boom') } }) },
         //iseobj之for...in走訪含原型鏈; 純量站點不讀
         {
             key: 'object whose prototype is a Proxy with throwing ownKeys',
@@ -136,10 +141,14 @@ describe('readable-probe', function() {
         },
         //for...in只走字串鍵: 只有Symbol鍵之Proxy其getOwnPropertyDescriptor拋錯者, 判斷函數不觸發, 為可讀而無效
         { key: 'Proxy with only a Symbol key whose descriptor read throws', msg: null, str: false, bol: false, data: 'early', mk: () => new Proxy({}, { ownKeys: () => [Symbol('s')], getOwnPropertyDescriptor: boom('symgopd-boom') }) },
-        //標籤非Object與Array者不展開: Map標籤之Proxy其ownKeys拋錯者, 判斷函數不讀, 為可讀而無效
+        //標籤非Object者: 判斷函數(iseobj)不讀鍵, 為可讀而無效(早退); 資料站點之ownKeys只對標籤為[object Object]者給(chkReadable之ownKeys對任何標籤皆讀Reflect.ownKeys, 型別陣列與Buffer會一次展開全部索引鍵), 故ownKeys拋錯者不被讀到
         { key: 'Proxy with a Map tag whose ownKeys throws', msg: null, str: false, bol: false, data: 'early', mk: () => new Proxy({ [Symbol.toStringTag]: 'Map', id: 'z1' }, { ownKeys: boom('maptag-ownkeys-boom') }) },
-        //函數: isstr與資料型判斷函數讀取其標籤, isbol(lodash)不讀函數
-        { key: 'revoked function Proxy', msg: /revoked/i, str: true, bol: false, data: 'reject', mk: revoked(() => function() {}) },
+        //陣列(標籤[object Array]): isarr/isearr不讀鍵, 空陣列為可讀而無效(早退); ownKeys不給
+        { key: 'empty array Proxy whose ownKeys throws', msg: null, str: false, bol: false, data: 'early', mk: () => new Proxy([], { ownKeys: boom('arrkeys-boom') }) },
+        //elements:'first'(isearr之長度與[0]描述子, 規則二.4對照): 空陣列Proxy其length之描述子讀取拋錯者為不可讀(修前本地探針只讀length值而早退, 第557項起依chkReadable)
+        { key: 'empty array Proxy whose getOwnPropertyDescriptor throws', msg: null, str: false, bol: false, data: 'reject', mk: () => new Proxy([], { getOwnPropertyDescriptor: boom('arrgopd-boom') }) },
+        //函數: chkReadable預設對物件與函數皆讀標籤(修前之bol探針不讀函數, 現行isbol不讀任何物件, 以chkReadable為準)
+        { key: 'revoked function Proxy', msg: /revoked/i, str: true, bol: true, data: 'reject', mk: revoked(() => function() {}) },
         //有狀態: 第2次讀取才拋錯者, 判斷函數讀第1次成功而有效, 其後之cloneDeep讀第2次拋錯, 為原通道(探針於判斷函數之後, 不多讀一次)
         {
             key: 'one-element array whose [0] getter throws from the 2nd read',
@@ -181,6 +190,15 @@ describe('readable-probe', function() {
             },
         },
     ]
+    //DATA_NATURAL: 資料站點之判斷函數讀取成功而有效(不進檢核), 其後cloneDeep於try內才拋錯者, 訊息為拋出者之原訊息; 其餘'reject'者為檢核判為不可讀, 訊息為固定詞彙
+    let DATA_NATURAL = [
+        'Proxy whose has trap throws',
+        'one-element array whose [0] getter throws from the 2nd read',
+        'Proxy whose ownKeys throws from the 2nd call',
+    ]
+    for (let k of KINDS) {
+        k.dfixed = k.data === 'reject' && !DATA_NATURAL.includes(k.key)
+    }
     let KINDS_STR_T = KINDS.filter((v) => v.str)
     let KINDS_STR_F = KINDS.filter((v) => !v.str)
     let KINDS_BOL_T = KINDS.filter((v) => v.bol)
@@ -204,11 +222,11 @@ describe('readable-probe', function() {
         w.fsDeleteFolder(url)
     })
 
-    //chkBlocked, 原失敗通道之共同斷言: reject為Error且訊息為拋出者之原訊息, error事件恰一次且先於reject, 不發change
+    //chkBlocked, 原失敗通道之共同斷言: reject為Error且訊息為預期訊息(檢核判為不可讀者為固定詞彙, cloneDeep於try內拋錯者為拋出者之原訊息), error事件恰一次且先於reject, 不發change
     let chkBlocked = (out, mode, msg, d) => {
         assert.strict.equal(out.ok, false, `${mode} should reject`)
         assert.strict.ok(out.err instanceof Error, `${mode} should reject with Error`)
-        assert.strict.ok(okMsg(msg, out.err.message), `${mode} message should be the thrower's own message, got "${out.err.message}"`)
+        assert.strict.ok(okMsg(msg, out.err.message), `${mode} message should be ${msg instanceof RegExp ? msg : `"${msg}"`}, got "${out.err.message}"`)
         let evErr = out.evs.filter((v) => v.t === 'error')
         assert.strict.equal(evErr.length, 1, `${mode} should emit error exactly once`)
         assert.strict.equal(out.nAtSettle, 1, `${mode} should emit error before reject`)
@@ -247,7 +265,7 @@ describe('readable-probe', function() {
                             let snapBefore = await snap(wo)
                             let d = kind.mk()
                             let out = await ob.run(() => entry.call(wo, d))
-                            chkBlocked(out, entry.fn, kind.msg, d)
+                            chkBlocked(out, entry.fn, kind.dfixed ? FIXED('data') : kind.msg, d)
                             assert.deepStrictEqual(await snap(wo), snapBefore, `${entry.fn} database should be unchanged`)
                             let r = await wo.insert({ id: `next-${nNext++}` })
                             assert.strict.equal(r.nInserted, 1, `${entry.fn} following insert should work`)
@@ -281,7 +299,7 @@ describe('readable-probe', function() {
             it(`${kind.key}: error event once before reject (mode selectByPk, data null)`, async function() {
                 //spec(R-WRITE-ERR-01規則7): isestr站點不可讀之pk走原失敗通道, 不得被判為無效主鍵而回null
                 let out = await ob.run(() => wo.selectByPk(kind.mk()))
-                chkBlocked(out, 'selectByPk', kind.msg)
+                chkBlocked(out, 'selectByPk', FIXED('pk'))
                 assert.strict.equal(out.evs.filter((v) => v.t === 'error')[0].data, null)
                 assert.deepStrictEqual((await wo.selectByPk('seed1')).id, 'seed1', 'later selectByPk should work')
             })
@@ -335,7 +353,7 @@ describe('readable-probe', function() {
                 let snapBefore = await snap(wo)
                 let d = { id: 'o1', secret: 'x' }
                 let out = await ob.run(() => wo.insert(d, { returnList: kind.mk() }))
-                chkBlocked(out, 'insert', kind.msg, d)
+                chkBlocked(out, 'insert', FIXED('option.returnList'), d)
                 assert.deepStrictEqual(await snap(wo), snapBefore, 'database should be unchanged')
                 let r = await wo.insert({ id: `next-${nNext++}` })
                 assert.strict.equal(r.nInserted, 1)
@@ -374,10 +392,10 @@ describe('readable-probe', function() {
         for (let o of opts) {
             for (let kind of KINDS) {
                 if (kind[o.sites]) {
-                    it(`opt.${o.name} = ${kind.key}: throws the thrower's own error at construction`, function() {
-                        //spec(R-WRITE-ERR-01規則7): 選項值於其判斷函數修前不可讀者, 建構函式同步throw原錯誤
+                    it(`opt.${o.name} = ${kind.key}: throws the fixed-vocabulary error at construction`, function() {
+                        //spec(R-WRITE-ERR-01規則7, 第557項規則二.2): 不可讀之選項值, 建構函式同步throw固定詞彙invalid opt.<名>: must be a readable value(不含拋出者之原訊息)
                         let v = kind.mk()
-                        assert.throws(() => WOrm({ url: `${url}/ctor-${o.name}.json`, [o.name]: v }), (err) => err instanceof Error && okMsg(kind.msg, err.message))
+                        assert.throws(() => WOrm({ url: `${url}/ctor-${o.name}.json`, [o.name]: v }), (err) => err instanceof Error && err.message === FIXED(`opt.${o.name}`))
                     })
                 }
                 else {
@@ -431,7 +449,7 @@ describe('readable-probe', function() {
                 //spec(R-WRITE-ERR-01規則7): message不可讀者走原失敗通道(整批reject), 不被判為無訊息而回該筆ok為0
                 let snapBefore = await snap(wo)
                 let out = await ob.run(() => wo.del(inheritedGetterThrows(kind.mk())))
-                chkBlocked(out, 'del', kind.msg)
+                chkBlocked(out, 'del', FIXED('err.message'))
                 assert.deepStrictEqual(await snap(wo), snapBefore)
             })
         }
@@ -523,6 +541,27 @@ describe('readable-probe', function() {
             assert.deepStrictEqual(r, { n: 2, nInserted: 2, ok: 1 })
             assert.strict.equal(hits, 1, 'element [1] should be read once by cloneDeep only')
         })
+        for (let entry of entries) {
+            it(`${entry.key}: own keys of a non-Object tag are never read (typed arrays and Buffers would be enumerated whole), early return`, async function() {
+                //spec(第557項,規則二.4: ownKeys對照iseobj之for...in): iseobj只對標籤為[object Object]者讀鍵, 資料站點不得對其餘標籤(Uint8Array、Buffer、Map、Date等)讀鍵;
+                //以標籤偽裝為各種內建類型之物件, 其ownKeys陷阱計次, 讀到即不符; 對照組: 標籤為Object者之ownKeys必被讀(由KINDS之ownKeys拋錯案證明)
+                let wo = mk(`ctl-nokeys-${entry.key}`)
+                let ob = mkObserver(wo)
+                for (let tag of ['Uint8Array', 'Map', 'Date', 'Array Buffer', 'Set']) {
+                    let n = 0
+                    let p = new Proxy({ [Symbol.toStringTag]: tag, id: 'k1' }, {
+                        ownKeys(t) {
+                            n++
+                            return Reflect.ownKeys(t)
+                        },
+                    })
+                    let out = await ob.run(() => entry.call(wo, p))
+                    assert.strict.equal(out.ok, true, tag)
+                    assert.deepStrictEqual(out.val, entry.early(), tag)
+                    assert.strict.equal(n, 0, `${tag}: ownKeys trap should not be called`)
+                }
+            })
+        }
         it('array whose [1] getter throws: still rejects through the cloneDeep path (unchanged)', async function() {
             let wo = mk('ctl-elem1')
             let ob = mkObserver(wo)
@@ -534,14 +573,14 @@ describe('readable-probe', function() {
         })
     })
 
-    //error事件之訂閱函數於探針路徑亦不致影響結果(既有規則: 訂閱函數自行拋錯不影響本次操作之結果): 訂閱函數自行拋錯時仍以原錯誤reject
+    //error事件之訂閱函數於檢核路徑亦不致影響結果(既有規則: 訂閱函數自行拋錯不影響本次操作之結果): 訂閱函數自行拋錯時仍以檢核之錯誤reject
     describe('subscriber that throws does not change the outcome', function() {
-        it('insert with unreadable data and a throwing error subscriber: still rejects with the original error', async function() {
+        it('insert with unreadable data and a throwing error subscriber: still rejects with the readability error', async function() {
             let wo = mk('sub-throw', { logDetail: false, funLog: () => {} })
             wo.on('error', () => {
                 throw new Error('subscriber-boom')
             })
-            await assert.rejects(() => wo.insert(KINDS[0].mk()), /ownKeys-boom/)
+            await assert.rejects(() => wo.insert(KINDS[0].mk()), (err) => err.message === FIXED('data'))
         })
     })
 })

@@ -100,7 +100,8 @@ describe('write-pre-error', function() {
         { key: 'one-element array whose [0] getter throws (isearr)', mk: arr1Getter },
     ]
 
-    //inputMsgs, 各壞輸入應原樣通過之訊息(帳本規則2: 訊息為拋出者之原訊息, 不被改寫為泛用訊息; 引擎/lodash之訊息以關鍵字比對, 不綁死版本)
+    //inputMsgs, 各壞輸入應原樣通過之訊息(帳本規則2: 訊息為拋出者之原訊息, 不被改寫為泛用訊息; 引擎/lodash之訊息以關鍵字比對, 不綁死版本);
+    //例外(帳本規則7, 第557項): 判斷函數(iseobj、isearr)回false之分支內由wsemi chkReadable判為不可讀者(下列最後三項), 改為固定詞彙invalid data: must be a readable value, 不含原例外文字
     let inputMsgs = {
         'null-proto Date (field in batch)': /primitive/i,
         'null-proto Date (single object)': /primitive/i,
@@ -108,9 +109,9 @@ describe('write-pre-error', function() {
         'Date with null constructor': /constructor/i,
         'throwing getter (nested field)': 'getter-boom',
         'deep nesting (stack overflow)': /call stack/i,
-        'Proxy whose ownKeys throws (iseobj)': 'ownKeys-boom',
-        'Proxy whose toStringTag read throws (iseobj)': 'tag-boom',
-        'one-element array whose [0] getter throws (isearr)': 'elem-getter-boom',
+        'Proxy whose ownKeys throws (iseobj)': 'invalid data: must be a readable value',
+        'Proxy whose toStringTag read throws (iseobj)': 'invalid data: must be a readable value',
+        'one-element array whose [0] getter throws (isearr)': 'invalid data: must be a readable value',
     }
 
     //thrownValues, 呼叫端存取器拋出之值之型別(帳本規則1: 含拋出值本身無法轉為字串者, error事件仍恰一次): reject之值為拋出者本身, 事件之訊息為字串(msg)
