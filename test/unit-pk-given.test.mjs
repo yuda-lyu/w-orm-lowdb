@@ -90,7 +90,7 @@ describe('pk given', function() {
         { name: 'Date', make: () => new Date(0) },
     ]
 
-    //讀取即拋錯或已撤銷之id值(S2之特例: 於資料複製階段cloneDeep即拋出, 屬既有行為, 訊息為拋出者之原訊息, 仍為reject而非補值)
+    //讀取即拋錯或已撤銷之id值(S2之特例: 於資料複製階段cloneDeep即拋出, 第557項對齊輪A3起轉固定詞彙invalid data: must be a readable value, 不轉出拋出者之原訊息, 仍為reject而非補值)
     let genTagThrow = () => {
         let o = { a: 'SECRET-TAG' }
         Object.defineProperty(o, Symbol.toStringTag, {
@@ -175,7 +175,8 @@ describe('pk given', function() {
                 })
             }
 
-            //S2: 讀取即拋錯或已撤銷之id值同樣reject而非補值(於複製階段拋出, 訊息為拋出者之原訊息), 於try內故error事件恰一次, 既有列原樣, 無新id列
+            //S2: 讀取即拋錯或已撤銷之id值同樣reject而非補值(於複製階段拋出, 第557項對齊輪A3起訊息為固定詞彙invalid data: must be a readable value, 不含拋出者之原訊息),
+            //於try內故error事件恰一次且data為null(A4), 既有列原樣, 無新id列
             for (let api of ['insert', 'insertBulk', 'save', 'del']) {
                 for (let h of hostileIds) {
                     it(`${api}: ${h.name} rejects, writes and deletes nothing`, async function() {
@@ -190,8 +191,11 @@ describe('pk given', function() {
                             rej = err
                         }
                         assert.ok(rej !== null, `must reject, resolved ${JSON.stringify(r)}`)
+                        assert.strictEqual(msgOf(rej), 'invalid data: must be a readable value') //A3
                         assert.deepStrictEqual(rawIds(t), ['good']) //既有列原樣, 無新id列
                         assert.strictEqual(nType(t.evs, 'error', api), 1)
+                        assert.ok(t.evs[0].data === null) //A4
+                        assert.strictEqual(t.evs[0].err, 'invalid data: must be a readable value')
                         assert.strictEqual(nType(t.evs, 'change'), 0)
                         assert.ok(msgOf(rej).indexOf('SECRET') < 0)
                     })

@@ -97,3 +97,14 @@
 - **`ownKeys:true` 對大型別陣列有成本,須以標籤先行**(唯讀複審實測發現,首版照規則字面對所有標籤給 `ownKeys:true`): `chkReadable` 之 `ownKeys` 對任何標籤皆讀 `Reflect.ownKeys`,`insertBulk(Buffer.alloc(1e7))`(可讀而型別不符,應早退)約 6.7 秒、堆積增 845MB,5e7 者配置失敗而被誤判為不可讀;舊本地探針與 `iseobj` 都只對 `[object Object]` 讀鍵.改為先讀標籤、只對 Object 標籤給 `ownKeys`,並以「標籤偽裝為 `Uint8Array`/`Map`/`Date` 之物件其 `ownKeys` 陷阱計次為 0」鎖定(只看耗時之測試不穩,計次才有鑑別力).已回饋 wsemi(提供淺選項或略過 ArrayBuffer 視圖).教訓: 規則字面之呼叫形(`{ ownKeys: true }`)未必等於舊探針之範圍,**移除本地探針前先以「大型/特殊標籤之無效輸入」量成本與行為**.
 - **改測試須分辨「依舊行為之斷言」與「真缺陷」**: `unit-wellformed` 之一案以 `{ id: 12345 }` 當「未帶有效 id」驗證補主鍵(即 1.9.69 之靜默換 id 被寫成預期),規則一明令禁止,故改 `{ id: null }`(仍屬未帶);非放寬,是規格翻譯修正,並於 README 不相容變更與帳本載明.
 - **變異腳本之測試集不必含全套**: 含 `unit-wellformed`(每案約 45 秒)使單一變異逾 50 秒,36 項須半小時;只取 `unit-pk-given`、`unit-readable-probe`、`unit-write-pre-error`、`unit-autogenpk` 約 8 秒/項.
+
+## 全族對齊輪 A1–A6(第 557 項,oro557a2)(2026-11-20)
+
+- **先以同一探針逐代號實測修前,再只改不合者**: 276 格探針(代號 × 入口 × 輸入形狀,修前取 `git archive HEAD` 之 `src`)顯示 A5(`selectByPk` 不可讀 `pk`)、A6(主鍵給了而非字串)修前已合,只補測試;A1–A4 不合.不合者之改法共四個單一來源(`mkReadErr`/`isReadErr`、`getOptVal`、`cloneInput`),站點不逐點改寫語意.
+- **A4 以「錯誤種類」登錄而非逐點傳 `null`**: 入口階段拒絕皆為固定詞彙之「不可讀」錯誤,於 `mkReadErr` 登錄 `WeakSet`,`emitError`(單一發射點)見 `isReadErr` 即傳 `null`;各 `*Core` 之 `emitError('insert', data, res)` 呼叫不動.代價: 以種類判定,故 `err.message` 不可讀者(複製之後拋出)之事件 `data` 亦為 `null`(已入帳本已知限制⑤).變異 A4-01/03/04/05/06 證明站點與登錄缺一即紅.
+- **A1/A2 之分辨**: `get(容器, 鍵)` 拋錯時以 `chkReadable(容器)`(只讀標籤)判斷,非空即容器不可讀(`invalid opt`/`invalid option`),否則視為成員存取器(`invalid opt.<鍵>`/`invalid option.<鍵>`).`chkReadable` 不呼叫存取器、不拋錯,故可放在 `catch` 內.只對字串鍵拋錯之 `get` 陷阱 Proxy 會判為成員(與系列參考實作同,見帳本限制⑥).
+- **複製處之 catch 不分辨原因 = 無法複製者之訊息一併改**: `cloneInput` 之 catch 無從分辨「呼叫端存取器拋出」與「lodash/引擎自拋」(原型為 `null` 之 Date 之 `Cannot convert object to primitive value`、20000 層巢狀之 `Maximum call stack size exceeded`),故一併轉固定詞彙(README 不相容變更已載).
+- **舊測試承擔了兩種職責,改釘時須分開**: `unit-write-pre-error` 之 `thrownValues`(8 種拋出值型別 × 4 入口)與 `unit-diaglog-wire` 之 R01/B 組,原以「資料內自有存取器拋出」為外來錯誤之觸發,同時驗證(i)入口階段拒絕之通道與(ii)外來錯誤之身分/遮罩(R-DIAG-01、fail-closed 副本).A3 後自有存取器於複製階段即轉固定詞彙,(i)改釘固定詞彙,(ii)改以**複製之後才讀取之原型上 `id` 存取器**觸發(`Object.create({ get id() { throw … } }, …)`;`del` 之逐筆讀取另有既有案),不可直接刪案而失去(ii).
+- **失敗斷言勿對不可讀之值用 `assert.equal(值, null)`**: 修前紅時 `ev.data` 為敵意物件(已撤銷 Proxy、`get` 陷阱拋錯之 Proxy),`assert.strict.equal` 產生訊息時檢視該值,mocha 於中途無摘要即以離開碼 0 結束(`quiet-run` 警告「未見測試摘要行」);改 `assert.ok(值 === null, 訊息)`(布林比對)後修前紅正常報 293 案.
+- **A1–A4 變異之設計**: 44 項(`./tmp` 副本,`unit-diaglog-wire` 不列入——其靜態計數 `throw mkErr(`/`throw mkReadErr(` 會被任何改動擊殺而掩蓋行為測試之鑑別力);站點移除/改回舊寫法逐點(建構 5、`insert`、`save`、複製 4)、單一來源改壞(`getOptVal` 4 種、`cloneInput` 3 種、`emitError`/`mkReadErr` 登錄)、名稱改錯、過度擴大;另重跑既有規則二變異 24 項,唯 R-26(標籤讀取失敗改吞掉,其後 `chkReadable` 自行再讀而同樣判不可讀)為等價存活.
+- **唯讀複審(sonnet)之處置**: 未給結論,回報 D1(複製之後讀取之外來值:原型 `id` 存取器、可列舉繼承存取器、巢狀 `Error` 值之 `message` 存取器〔`cloneDeep` 對 `Error` 以參照帶過〕仍轉出原文)、D2(只對字串鍵拋錯之 `get` 陷阱 Proxy 判為成員)、D3(`err.message` 不可讀者 `data` 亦為 `null`)——皆非回歸(新舊相同或條款解釋差異),已入帳本限制①⑤⑥並列需裁示,不擅自擴大條款範圍.

@@ -9,6 +9,9 @@ import { mkObserver } from './lib/mkObserver.mjs'
 //寫入入口insert、insertBulk、save、del於try之外原有讀取呼叫端輸入之前置處理(讀option、iseobj/isearr判定、cloneDeep(data)),
 //其拋錯者(原型為null或constructor為null之Date、存取器拋錯、Proxy trap拋錯、深度過大之stack overflow等)修前reject但不發error事件,
 //規則: 任何因輸入導致之失敗皆走同一錯誤路徑, 即「error事件恰一次且先於reject, 不發change, 資料庫不變, 訊息不回顯值」
+//第557項對齊輪(A1~A4, 帳本R-WRITE-ERR-01規則8)起: 入口階段(option之讀取, data之判定與複製)之失敗, 訊息一律為本套件之固定詞彙invalid <名稱>: must be a readable value
+//(option容器本身不可讀為invalid option: …, 成員為拋錯之存取器為invalid option.<鍵>: …, 資料內之巢狀不可讀值或無法複製者為invalid data: …), 不轉出拋出者之原訊息與值,
+//reject為本套件之Error而非拋出者本身, error事件之data引數為null; 複製之後(procPk讀取原型上之存取器等)拋出之外來值維持原通道與原行為(經診斷遮罩, 見unit-diaglog-wire)
 describe('write-pre-error', function() {
     let url = './test/_tmp/write-pre-error'
 
@@ -100,18 +103,34 @@ describe('write-pre-error', function() {
         { key: 'one-element array whose [0] getter throws (isearr)', mk: arr1Getter },
     ]
 
-    //inputMsgs, 各壞輸入應原樣通過之訊息(帳本規則2: 訊息為拋出者之原訊息, 不被改寫為泛用訊息; 引擎/lodash之訊息以關鍵字比對, 不綁死版本);
-    //例外(帳本規則7, 第557項): 判斷函數(iseobj、isearr)回false之分支內由wsemi chkReadable判為不可讀者(下列最後三項), 改為固定詞彙invalid data: must be a readable value, 不含原例外文字
+    //FIXED, 本套件之固定詞彙(帳本規則7、8): invalid <名稱>: must be a readable value, 不含拋出者之原訊息與值
+    let FIXED = (name) => `invalid ${name}: must be a readable value`
+
+    //inputMsgs, 各壞輸入之訊息: 第557項對齊輪A3起一律為固定詞彙invalid data: must be a readable value(複製處之catch不分辨頂層與巢狀、不分辨拋出之原因),
+    //不轉出拋出者之原訊息(引擎/lodash之訊息、呼叫端存取器之訊息); 原訊息以rawMsgs記錄, 供斷言其不被轉出
     let inputMsgs = {
+        'null-proto Date (field in batch)': FIXED('data'),
+        'null-proto Date (single object)': FIXED('data'),
+        'null-proto Date (3rd record of batch)': FIXED('data'),
+        'Date with null constructor': FIXED('data'),
+        'throwing getter (nested field)': FIXED('data'),
+        'deep nesting (stack overflow)': FIXED('data'),
+        'Proxy whose ownKeys throws (iseobj)': FIXED('data'),
+        'Proxy whose toStringTag read throws (iseobj)': FIXED('data'),
+        'one-element array whose [0] getter throws (isearr)': FIXED('data'),
+    }
+
+    //rawMsgs, 拋出者之原訊息(引擎/lodash之訊息以關鍵字比對, 不綁死版本); 不得出現於reject之訊息與error事件之訊息
+    let rawMsgs = {
         'null-proto Date (field in batch)': /primitive/i,
         'null-proto Date (single object)': /primitive/i,
         'null-proto Date (3rd record of batch)': /primitive/i,
         'Date with null constructor': /constructor/i,
-        'throwing getter (nested field)': 'getter-boom',
+        'throwing getter (nested field)': /getter-boom/,
         'deep nesting (stack overflow)': /call stack/i,
-        'Proxy whose ownKeys throws (iseobj)': 'invalid data: must be a readable value',
-        'Proxy whose toStringTag read throws (iseobj)': 'invalid data: must be a readable value',
-        'one-element array whose [0] getter throws (isearr)': 'invalid data: must be a readable value',
+        'Proxy whose ownKeys throws (iseobj)': /ownKeys-boom/,
+        'Proxy whose toStringTag read throws (iseobj)': /tag-boom/,
+        'one-element array whose [0] getter throws (isearr)': /elem-getter-boom/,
     }
 
     //thrownValues, 呼叫端存取器拋出之值之型別(帳本規則1: 含拋出值本身無法轉為字串者, error事件仍恰一次): reject之值為拋出者本身, 事件之訊息為字串(msg)
@@ -158,10 +177,11 @@ describe('write-pre-error', function() {
         { key: 'del', fn: 'del', call: (wo, d) => wo.del(d), early: () => [], valid: () => ({ id: 'seed1' }) },
     ]
 
-    //optCases, option型之壞輸入(搭配合法data): 讀option亦為try之外之前置處理; sameRef: 事件之data是否為呼叫端傳入之同一物件(insert先讀option再複製故是, save先複製再讀option故為複本)
+    //optCases, option型之壞輸入(搭配合法data): 讀option亦為try之外之前置處理; 第557項對齊輪A2: 成員為拋錯之存取器者轉固定詞彙invalid option.<鍵>: must be a readable value, 不轉出拋出者之原訊息,
+    //event之data引數為null(A4; insert先讀option再複製, save先複製再讀option, 皆為入口階段)
     let optCases = [
-        { fn: 'insert', key: 'option.returnList getter throws', mkOpt: () => optGetterThrows('returnList'), sameRef: true, msg: 'opt-boom' },
-        { fn: 'save', key: 'option.autoInsert getter throws', mkOpt: () => optGetterThrows('autoInsert'), sameRef: false, msg: 'opt-boom' },
+        { fn: 'insert', key: 'option.returnList getter throws', mkOpt: () => optGetterThrows('returnList'), msg: FIXED('option.returnList') },
+        { fn: 'save', key: 'option.autoInsert getter throws', mkOpt: () => optGetterThrows('autoInsert'), msg: FIXED('option.autoInsert') },
     ]
 
     //mk: 於測試資料夾下建立資料庫檔(url為檔案路徑)
@@ -199,25 +219,17 @@ describe('write-pre-error', function() {
         return evErr[0]
     }
 
-    //chkData, 事件之data引數(帳本規則4): sameRef為真者須為呼叫端傳入之同一物件(拋錯於複本建立之前); 為假者為複本, 以深度相等比對
-    let chkData = (ev, d, sameRef, entry) => {
-        if (sameRef) {
-            assert.strict.ok(ev.data === d, `${entry.fn} error event data should be the caller's input (no copy exists yet)`)
-        }
-        else {
-            assert.strict.ok(ev.data !== d, `${entry.fn} error event data should be the copy (it exists already), not the caller's object`)
-            assert.deepStrictEqual(ev.data, d, `${entry.fn} error event data should equal the caller's input`)
-        }
-    }
-
-    //chkRej, 拋出者為Error之共同斷言(帳本規則1、2、4): reject為Error, 事件之訊息同reject之message, 事件之data為呼叫端傳入之原值, 訊息不回顯資料值
-    let chkRej = (out, entry, d, sameRef, msg) => {
+    //chkRej, 入口階段拒絕之共同斷言(帳本規則1、2、4、8): reject為本套件之Error(非拋出者本身), 事件之訊息同reject之message,
+    //訊息為預期之固定詞彙(msg, 全等; 不轉出拋出者之原訊息raw), 事件之data引數為null(第557項對齊輪A4), 訊息不回顯資料值
+    let chkRej = (out, entry, msg, raw) => {
         let ev = chkEv(out, entry)
         assert.strict.ok(out.err instanceof Error, `${entry.fn} should reject with Error`)
         assert.strict.equal(ev.err, out.err.message, `${entry.fn} error event should carry the reject message`)
-        //帳本規則2: 訊息為拋出者之原訊息(不被改寫為泛用訊息)
-        assert.strict.ok(msg instanceof RegExp ? msg.test(out.err.message) : out.err.message === msg, `${entry.fn} message should be the thrower's own message, got "${out.err.message}"`)
-        chkData(ev, d, sameRef, entry)
+        assert.strict.equal(out.err.message, msg, `${entry.fn} message should be the fixed vocabulary, got "${out.err.message}"`)
+        if (raw !== undefined) {
+            assert.strict.ok(!raw.test(out.err.message) && !raw.test(ev.err), `${entry.fn} should not echo the thrower's message`)
+        }
+        assert.strict.ok(ev.data === null, `${entry.fn} error event data should be null (A4)`) //boolean比對: 失敗時斷言訊息不致檢視不可讀之值
         assert.strict.ok(!String(out.err.message).includes(MARK), `${entry.fn} message should not echo data values`)
     }
 
@@ -247,7 +259,7 @@ describe('write-pre-error', function() {
                     let snapBefore = await snap(wo)
                     let d = input.mk()
                     let out = await ob.run(() => entry.call(wo, d))
-                    chkRej(out, entry, d, true, inputMsgs[input.key])
+                    chkRej(out, entry, inputMsgs[input.key], rawMsgs[input.key])
                     await chkAfter(snapBefore)
                 })
             }
@@ -257,14 +269,15 @@ describe('write-pre-error', function() {
                     let snapBefore = await snap(wo)
                     let d = [{ id: 'o1', secret: MARK, a: 1 }]
                     let out = await ob.run(() => entry.call(wo, d, oc.mkOpt()))
-                    chkRej(out, entry, d, oc.sameRef, oc.msg)
+                    chkRej(out, entry, oc.msg, /opt-boom/)
                     await chkAfter(snapBefore)
                 })
             }
 
             for (let tv of thrownValues) {
-                it(`thrown value (${tv.key}): rejects with the thrown value, one error event with string message "${tv.msg}", no change`, async function() {
-                    //帳本規則1: 拋出值本身無法轉為字串者(null原型物件、message存取器拋錯、toString拋錯)亦須恰發出一次error事件(外審agy-opus F-01), reject之值為拋出者本身
+                it(`thrown value (${tv.key}) from a nested accessor: rejects with the fixed vocabulary (the thrown value is never read nor echoed), one error event with data null, no change`, async function() {
+                    //帳本規則1、8(第557項對齊輪A3): 資料內巢狀存取器拋出之值(含無法轉為字串者: null原型物件、message存取器拋錯、toString拋錯)於複製階段被攔下,
+                    //reject為本套件之固定詞彙Error而非拋出者, 拋出者之message與toString不被執行, error事件仍恰一次
                     let snapBefore = await snap(wo)
                     msgGetterHits = 0
                     let thrown = tv.mk()
@@ -272,21 +285,46 @@ describe('write-pre-error', function() {
                     let out = await ob.run(() => entry.call(wo, d))
                     let ev = chkEv(out, entry)
                     assert.strict.equal(typeof ev.err, 'string', `${entry.fn} error event message should be a string`)
-                    if (tv.failClosed === undefined) {
-                        assert.strict.ok(Object.is(out.err, thrown), `${entry.fn} should reject with the thrown value itself`)
-                        assert.strict.equal(ev.err, tv.msg, `${entry.fn} error event message`)
-                    }
-                    else {
-                        assert.strict.ok(!Object.is(out.err, thrown), `${entry.fn} should reject with the fail-closed copy, not the thrown value`)
-                        assert.strict.equal(Object.getPrototypeOf(out.err), Object.prototype, `${entry.fn} copy keeps the built-in prototype`)
-                        assert.strict.equal(out.err.message, tv.failClosed, `${entry.fn} copy message`)
-                        assert.strict.equal(ev.err, tv.failClosed, `${entry.fn} error event message comes from the copy`)
-                        assert.strict.equal(msgGetterHits, 0, `${entry.fn} the caller's getter must not run`)
-                    }
-                    assert.strict.ok(!ev.err.includes(MARK), `${entry.fn} message should not echo data values`)
-                    chkData(ev, d, true, entry)
+                    assert.strict.ok(!Object.is(out.err, thrown), `${entry.fn} should not reject with the thrown value itself`)
+                    chkRej(out, entry, FIXED('data'))
+                    assert.strict.equal(msgGetterHits, 0, `${entry.fn} the caller's getter must not run`)
                     await chkAfter(snapBefore)
                 })
+            }
+
+            //複製之後讀取原型上之id存取器而拋出之外來值(procPk): 不屬入口階段之複製處, 維持原通道與原行為(reject為拋出者本身或fail-closed副本, 訊息原樣經診斷遮罩, error事件之data為複製);
+            //del之id於逐筆讀取(ok為0, 見unit-diaglog-wire), 不在此列
+            if (entry.fn !== 'del') {
+                for (let tv of thrownValues) {
+                    it(`thrown value (${tv.key}) from an inherited id accessor (read after the copy): rejects with the thrown value, one error event with string message "${tv.msg}", data is the copy, no change`, async function() {
+                        //帳本規則1: 拋出值本身無法轉為字串者(null原型物件、message存取器拋錯、toString拋錯)亦須恰發出一次error事件(外審agy-opus F-01), reject之值為拋出者本身
+                        let snapBefore = await snap(wo)
+                        msgGetterHits = 0
+                        let thrown = tv.mk()
+                        let d = Object.create({
+                            get id() {
+                                throw thrown
+                            },
+                        }, { secret: { value: MARK, enumerable: true } })
+                        let out = await ob.run(() => entry.call(wo, d))
+                        let ev = chkEv(out, entry)
+                        assert.strict.equal(typeof ev.err, 'string', `${entry.fn} error event message should be a string`)
+                        if (tv.failClosed === undefined) {
+                            assert.strict.ok(Object.is(out.err, thrown), `${entry.fn} should reject with the thrown value itself`)
+                            assert.strict.equal(ev.err, tv.msg, `${entry.fn} error event message`)
+                        }
+                        else {
+                            assert.strict.ok(!Object.is(out.err, thrown), `${entry.fn} should reject with the fail-closed copy, not the thrown value`)
+                            assert.strict.equal(Object.getPrototypeOf(out.err), Object.prototype, `${entry.fn} copy keeps the built-in prototype`)
+                            assert.strict.equal(out.err.message, tv.failClosed, `${entry.fn} copy message`)
+                            assert.strict.equal(ev.err, tv.failClosed, `${entry.fn} error event message comes from the copy`)
+                            assert.strict.equal(msgGetterHits, 0, `${entry.fn} the caller's getter must not run`)
+                        }
+                        assert.strict.ok(!ev.err.includes(MARK), `${entry.fn} message should not echo data values`)
+                        assert.strict.ok(ev.data !== null && ev.data !== d, `${entry.fn} error event data is the copy (not an entry-stage rejection, unchanged)`)
+                        await chkAfter(snapBefore)
+                    })
+                }
             }
 
             if (entry.fn === 'insert') {
@@ -295,13 +333,13 @@ describe('write-pre-error', function() {
                     let snapBefore = await snap(wo)
                     let d = inputs[0].mk()
                     let out = await ob.run(() => wo.insert(d, optGetterThrows('returnList')))
-                    chkRej(out, entry, d, true, 'opt-boom')
+                    chkRej(out, entry, FIXED('option.returnList'), /opt-boom/)
                     await chkAfter(snapBefore)
                 })
                 it('invalid data with bad option: still rejects with the option error (option is read before the validity check)', async function() {
                     let snapBefore = await snap(wo)
                     let out = await ob.run(() => wo.insert(null, optGetterThrows('returnList')))
-                    chkRej(out, entry, null, true, 'opt-boom')
+                    chkRej(out, entry, FIXED('option.returnList'), /opt-boom/)
                     await chkAfter(snapBefore)
                 })
             }
@@ -312,8 +350,8 @@ describe('write-pre-error', function() {
                     let snapBefore = await snap(wo)
                     let d = inputs[0].mk()
                     let out = await ob.run(() => wo.save(d, optGetterThrows('autoInsert')))
-                    chkRej(out, entry, d, true, /primitive/i)
-                    assert.strict.notEqual(out.err.message, 'opt-boom')
+                    chkRej(out, entry, FIXED('data'), /primitive/i)
+                    assert.strict.notEqual(out.err.message, FIXED('option.autoInsert'))
                     await chkAfter(snapBefore)
                 })
                 it('invalid data with bad option: returns [] without reading the option (control, unchanged)', async function() {

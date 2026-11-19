@@ -50,6 +50,55 @@ let isOwnErr = (err) => {
 }
 
 
+//setReadErr, 「呼叫端給的值不可讀」之拒絕(mkReadErr建立者)之集合(帳本R-WRITE-ERR-01規則7、8): 此類拒絕之error事件, 其data引數一律為null(不把不可讀之值交給訂閱函數);
+//以WeakSet判定(不讀錯誤物件之任何屬性, Proxy亦安全), 單一來源於emitError, 故各入口(option與data之讀取、判定與複製, 及selectByPk)不須逐點傳null
+let setReadErr = new WeakSet()
+
+
+//mkReadErr, 建立「呼叫端給的值不可讀」之固定詞彙錯誤invalid <名稱>: must be a readable value(不含值與原例外文字)並登錄為自有錯誤與不可讀拒絕
+let mkReadErr = (name) => {
+    let err = mkErr(`invalid ${name}: must be a readable value`)
+    setReadErr.add(err)
+    return err
+}
+
+
+//isReadErr, 是否為「呼叫端給的值不可讀」之拒絕
+let isReadErr = (err) => {
+    return err !== null && typeof err === 'object' && setReadErr.has(err)
+}
+
+
+//getOptVal, 取呼叫端給的選項容器(建構之opt, 方法之option)之成員值(帳本R-WRITE-ERR-01規則8): 讀取拋錯者一律轉固定詞彙而不轉出拋出者之原訊息:
+//容器本身不可讀(已撤銷之Proxy、get陷阱與Symbol.toStringTag拋錯者等, 以chkReadable判定)為invalid <容器名>: must be a readable value(容器名為opt或option);
+//容器可讀而該成員為存取器且拋錯(chkReadable不呼叫存取器)為invalid <容器名>.<鍵>: must be a readable value;
+//兩者皆走站點原失敗通道(寫入入口之try: error事件恰一次後reject; 建構: 同步throw); def為成員缺值時之預設(同lodash get)
+let getOptVal = (container, key, name, def) => {
+    try {
+        return get(container, key, def)
+    }
+    catch (err) {
+        if (chkReadable(container) !== '') {
+            throw mkReadErr(name)
+        }
+        throw mkReadErr(`${name}.${key}`)
+    }
+}
+
+
+//cloneInput, 複製呼叫端給的資料(與外部數據脫勾; 帳本R-WRITE-ERR-01規則8): cloneDeep讀取資料內之成員(id、列之成員、陣列之元素、各欄位值)而拋錯者
+//(已撤銷之Proxy、拋錯之存取器與陷阱等巢狀不可讀值, 及原型為null之Date、過深之巢狀等無法複製者)一律轉固定詞彙invalid data: must be a readable value而不轉出拋出者之原訊息,
+//與頂層data不可讀同一通道(寫入入口之try: error事件恰一次後reject, data引數為null, 資料庫不變); 複製處不分辨頂層與巢狀、不分辨拋出之原因
+let cloneInput = (data) => {
+    try {
+        return cloneDeep(data)
+    }
+    catch (err) {
+        throw mkReadErr('data')
+    }
+}
+
+
 //assertReadable, 呼叫端給的值之可讀性檢核(單一來源, 帳本R-WRITE-ERR-01規則7): 以wsemi之chkReadable分辨「不可讀」與「可讀而型別不符」, 不可讀者拋出固定詞彙之錯誤
 //invalid <名稱>: must be a readable value(不含值與原例外文字), 由站點所在之try(寫入入口與selectByPk)或建構函式之同步throw走原失敗通道;
 //why: wsemi之判斷函數(isestr、isbol、iseobj、isearr、haskey等)對讀取即拋錯之值(拋錯之Symbol.toStringTag、已撤銷之Proxy、陷阱拋錯之Proxy、元素getter拋錯之陣列)一律回false而不拋錯(1.9.69起),
@@ -59,7 +108,7 @@ let isOwnErr = (err) => {
 //opt為chkReadable之選項: 純量站點(opt.url/db/cl、opt.useCache/autoGenPk、option.returnList、pk、錯誤之message)不給, 只讀型別標籤; 資料站點見assertReadableData
 let assertReadable = (v, name, opt) => {
     if (chkReadable(v, opt) !== '') {
-        throw mkErr(`invalid ${name}: must be a readable value`)
+        throw mkReadErr(name)
     }
 }
 
@@ -69,14 +118,14 @@ let assertReadable = (v, name, opt) => {
 //ownKeys只於標籤為[object Object]者給: iseobj只對此標籤讀鍵(其餘標籤於isobj即回false, 不讀鍵), 而chkReadable之ownKeys對任何標籤皆讀Reflect.ownKeys,
 //型別陣列與Buffer之鍵為全部索引, 誤傳(可讀而型別不符, 早退)時一次展開同量之字串(1e7位元組約數秒、數百MB, 極端者因配置失敗被誤判為不可讀), 故以標籤先行決定選項(標籤之讀取拋錯者同為不可讀, 與chkReadable之標籤讀取同源);
 //chkReadable不呼叫存取器, 而isearr於length為1時會呼叫唯一元素之getter, 其拋錯者無從由chkReadable偵測, 故於此以try自讀一次(同修前探針之範圍), 拋錯者同為不可讀;
-//其餘元素與巢狀值由其後之cloneDeep讀取, 其拋錯者於try內走同一錯誤路徑(訊息為拋出者之原訊息)
+//其餘元素與巢狀值由其後之cloneInput讀取, 其拋錯者於try內走同一錯誤路徑(同為固定詞彙invalid data: must be a readable value)
 let assertReadableData = (v) => {
     let tag = ''
     try {
         tag = Object.prototype.toString.call(v)
     }
     catch (err) {
-        throw mkErr('invalid data: must be a readable value')
+        throw mkReadErr('data')
     }
     assertReadable(v, 'data', { ownKeys: tag === '[object Object]', elements: 'first' })
     try {
@@ -85,7 +134,7 @@ let assertReadableData = (v) => {
         }
     }
     catch (err) {
-        throw mkErr('invalid data: must be a readable value')
+        throw mkReadErr('data')
     }
 }
 
@@ -105,11 +154,12 @@ let assertReadableData = (v) => {
  *
  * error事件，參數為(mode, data, err)，於操作發生錯誤時發出：
  * mode為操作別字串，可為'select'、'selectByPk'、'insert'、'insertBulk'、'save'、'del'、'delAll'。
- * data為本次操作之輸入數據，無輸入數據者為null。
+ * data為本次操作之輸入數據，無輸入數據者為null；入口階段(option之讀取、data之判定與複製)之拒絕，data一律為null(不把不可讀之值交給訂閱函數)。
  * err為錯誤訊息字串，內容與正規管道所送出者一致。
  * 整批性錯誤於reject之前發出；逐筆失敗於該筆結果定案後發出，每筆一次。
- * insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null之Date使複製拋錯、存取器拋錯)亦屬整批性錯誤，同樣於reject之前恰發出一次、不發出change事件、資料庫不變；
- * 拋錯於複製建立之前者，data為呼叫端傳入之原值，其後者為複製；err為拋出者之原訊息(呼叫端自行拋出之值或訊息原樣通過，無法轉為字串者以固定訊息unknown error取代)，本套件不另行回顯數據內容。
+ * insert、insertBulk、save與del因輸入本身導致之失敗(如選項或資料不可讀、原型為null之Date使複製拋錯、存取器拋錯)亦屬整批性錯誤，同樣於reject之前恰發出一次、不發出change事件、資料庫不變；
+ * 入口階段之失敗(option容器或成員不可讀、data頂層或內部巢狀之值不可讀、無法複製)，err為固定詞彙invalid <名稱>: must be a readable value(不含拋出者之原訊息與值)，data為null；
+ * 其後之失敗(如複製之後讀取原型上之存取器所拋出之外來值)，data為複製，err為拋出者之原訊息(呼叫端自行拋出之值或訊息原樣通過，無法轉為字串者以固定訊息unknown error取代)，本套件不另行回顯數據內容。
  * 註: 逐筆失敗時整批仍resolve，故收到本事件不表示該次呼叫失敗；正常結果(如查無數據、主鍵未命中、全數已存在)不發出本事件。
  *
  * 註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵。
@@ -125,6 +175,8 @@ let assertReadableData = (v) => {
  * 寫入入口(insert、insertBulk、save、del)之data與insert之option.returnList、selectByPk之pk為整批reject(error事件恰一次後reject，資料庫不變)，建構函式之opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk為同步throw，
  * 訊息為invalid data: must be a readable value、invalid option.returnList: must be a readable value、invalid pk: must be a readable value、invalid opt.<名>: must be a readable value(不含拋出者之原訊息與值)；
  * 可讀而型別不符者(數字、字串等)行為不變(輸入無效之早退、選項用預設、selectByPk回null)；
+ * 選項容器本身不可讀(opt或option為已撤銷之Proxy、get陷阱拋錯等，讀其成員即拋錯)者為invalid option: must be a readable value(建構為invalid opt: …)，容器可讀而成員為拋錯之存取器者為invalid <容器>.<鍵>: must be a readable value
+ * (opt.<鍵>、option.returnList、option.autoInsert)，資料內巢狀之不可讀值(複製資料時拋錯者: id值、列之成員、陣列其後之元素、欄位值為已撤銷之Proxy或拋錯之存取器等，複製處不分辨拋出之原因)為invalid data: must be a readable value，皆走原失敗通道，不轉出拋出者之原訊息；
  *
  * 字串良構(w-orm系列規則，wsemi之chkOrmStr與chkOrmData): lowdb以JSON檔存放，孤立代理字元(String.prototype.isWellFormed()為false)可保真，本身不致相撞，
  * 惟系列其他後端(UTF-8、BSON儲存)會改寫為U+FFFD，為使更換後端時資料行為一致，全系列一律於任何讀取與寫入之前拒收：
@@ -173,10 +225,12 @@ function WOrmLowdb(opt = {}) {
     }
 
     //選項值為呼叫端給的值: 判斷函數回false時先經assertReadable, 不可讀者(拋錯之Symbol.toStringTag、已撤銷之Proxy等)建構時同步throw固定詞彙之錯誤invalid opt.<名>: must be a readable value,
-    //不被判斷函數吞成預設值(帳本R-WRITE-ERR-01規則7); 可讀而型別不符者仍忽略並用預設
+    //不被判斷函數吞成預設值(帳本R-WRITE-ERR-01規則7); 可讀而型別不符者仍忽略並用預設;
+    //成員之讀取經getOptVal(帳本R-WRITE-ERR-01規則8): opt容器本身不可讀者建構時同步throw invalid opt: must be a readable value,
+    //成員為拋錯之存取器者throw invalid opt.<名>: must be a readable value, 皆不轉出拋出者之原訊息
 
     //url
-    let url = get(opt, 'url')
+    let url = getOptVal(opt, 'url', 'opt')
     if (!isestr(url)) {
         assertReadable(url, 'opt.url')
         url = './db.json'
@@ -186,7 +240,7 @@ function WOrmLowdb(opt = {}) {
     }
 
     //db
-    let db = get(opt, 'db')
+    let db = getOptVal(opt, 'db', 'opt')
     if (!isestr(db)) {
         assertReadable(db, 'opt.db')
         db = 'worm'
@@ -196,7 +250,7 @@ function WOrmLowdb(opt = {}) {
     }
 
     //cl
-    let cl = get(opt, 'cl')
+    let cl = getOptVal(opt, 'cl', 'opt')
     if (!isestr(cl)) {
         assertReadable(cl, 'opt.cl')
         cl = 'test'
@@ -206,7 +260,7 @@ function WOrmLowdb(opt = {}) {
     }
 
     //useCache
-    let useCache = get(opt, 'useCache')
+    let useCache = getOptVal(opt, 'useCache', 'opt')
     if (!isbol(useCache)) {
         assertReadable(useCache, 'opt.useCache')
         useCache = false
@@ -214,7 +268,7 @@ function WOrmLowdb(opt = {}) {
 
     //autoGenPk, 主鍵由誰產生為整個資料表之政策, 故為建構層設定, 不可於各寫入函數之option逐次覆寫,
     //否則同一資料表將混入兩種來源之主鍵而難以追溯
-    let autoGenPk = get(opt, 'autoGenPk')
+    let autoGenPk = getOptVal(opt, 'autoGenPk', 'opt')
     if (!isbol(autoGenPk)) {
         assertReadable(autoGenPk, 'opt.autoGenPk')
         autoGenPk = true
@@ -451,7 +505,8 @@ function WOrmLowdb(opt = {}) {
     }
 
     //emitError, 操作發生錯誤時發出, 錯誤訊息一律轉為字串
-    //拋出之值本身可能無法轉為字串(如呼叫端之存取器拋出null原型物件, 或其message存取器拋錯), 此時以固定訊息取代, 令error事件仍恰發出一次(帳本R-WRITE-ERR-01), reject之值不變
+    //拋出之值本身可能無法轉為字串(如呼叫端之存取器拋出null原型物件, 或其message存取器拋錯), 此時以固定訊息取代, 令error事件仍恰發出一次(帳本R-WRITE-ERR-01), reject之值不變;
+    //「呼叫端給的值不可讀」之拒絕(isReadErr: option與data之讀取、判定與複製, 及selectByPk之pk)屬入口階段之拒絕, data引數一律為null, 不把不可讀之值交給訂閱函數(帳本R-WRITE-ERR-01規則8)
     let emitError = (mode, data, err) => {
         let msg = 'unknown error'
         try {
@@ -461,7 +516,7 @@ function WOrmLowdb(opt = {}) {
             //無法轉為字串者沿用固定訊息
         }
         try {
-            ee.emit('error', mode, data, msg)
+            ee.emit('error', mode, isReadErr(err) ? null : data, msg)
         }
         catch (errEmit) {
             diag('error handler threw', { mode, ...diag.brief(errEmit) }, () => errEmit)
@@ -760,7 +815,7 @@ function WOrmLowdb(opt = {}) {
      *
      * @memberOf WOrmLowdb
      * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)
-     * @param {Object} [option={}] 輸入設定物件，預設為{}
+     * @param {Object} [option={}] 輸入設定物件，預設為{}；容器本身不可讀者(如已撤銷之Proxy)整批reject(invalid option: must be a readable value)，成員為拋錯之存取器者整批reject(invalid option.<鍵>: must be a readable value)
      * @param {Boolean} [option.returnList=false] 輸入是否改回傳逐筆結果布林值，預設false；非布林值忽略並用預設，讀取即拋錯者整批reject(invalid option.returnList: must be a readable value)。給true時回傳與輸入等長保序之陣列，各筆為{n,nInserted,ok}，nInserted為1即該筆為新增；聚合計數只回答有幾筆是新的，逐筆結果方能回答是哪幾筆，供下游僅對新資料執行昂貴動作。回傳形式由呼叫點靜態決定，共用之結果處理程式碼不可跨不同取值之呼叫點混用
      * @returns {Promise} 回傳Promise，resolve依returnList回傳插入結果：預設回傳聚合物件{n,nInserted,ok}，n為輸入筆數、nInserted為實際插入筆數；returnList為true時回傳逐筆陣列，各筆n恆為1(主鍵命中或經插入)、ok恆為1(insert之錯誤皆屬整批性而reject，不進逐筆)；reject回傳錯誤訊息
      */
@@ -771,8 +826,9 @@ function WOrmLowdb(opt = {}) {
         let res = null
         try {
 
-            //returnList, 讀取呼叫端傳入之option、判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01)
-            let returnList = get(option, 'returnList')
+            //returnList, 讀取呼叫端傳入之option、判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01);
+            //option容器不可讀或returnList為拋錯之存取器者經getOptVal轉固定詞彙(invalid option: / invalid option.returnList: must be a readable value)
+            let returnList = getOptVal(option, 'returnList', 'option')
             if (!isbol(returnList)) {
                 //帳本R-WRITE-ERR-01規則7: option.returnList不可讀者拋出invalid option.returnList: must be a readable value, 不被isbol判為預設值
                 assertReadable(returnList, 'option.returnList')
@@ -794,8 +850,9 @@ function WOrmLowdb(opt = {}) {
                 }
             }
 
-            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
-            data = cloneDeep(data)
+            //cloneInput(cloneDeep), 與外部數據脫勾, 其拋錯者(巢狀不可讀值、原型為null之Date等)一律轉固定詞彙invalid data: must be a readable value,
+            //走同一錯誤路徑(error事件恰一次後reject, data引數為null, 帳本R-WRITE-ERR-01規則8)
+            data = cloneInput(data)
 
             //check
             if (!isarr(data)) {
@@ -928,8 +985,9 @@ function WOrmLowdb(opt = {}) {
                 }
             }
 
-            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
-            data = cloneDeep(data)
+            //cloneInput(cloneDeep), 與外部數據脫勾, 其拋錯者(巢狀不可讀值、原型為null之Date等)一律轉固定詞彙invalid data: must be a readable value,
+            //走同一錯誤路徑(error事件恰一次後reject, data引數為null, 帳本R-WRITE-ERR-01規則8)
+            data = cloneInput(data)
 
             //check
             if (!isarr(data)) {
@@ -1018,7 +1076,7 @@ function WOrmLowdb(opt = {}) {
      *
      * @memberOf WOrmLowdb
      * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者該筆ok為0並附err(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)
-     * @param {Object} [option={}] 輸入設定物件，預設為{}
+     * @param {Object} [option={}] 輸入設定物件，預設為{}；容器本身不可讀者(如已撤銷之Proxy)整批reject(invalid option: must be a readable value)，成員為拋錯之存取器者整批reject(invalid option.<鍵>: must be a readable value)
      * @param {boolean} [option.autoInsert=true] 輸入是否於儲存時發現原本無數據，則自動改以插入處理，預設為true
      * @returns {Promise} 回傳Promise，resolve回傳與輸入等長之儲存結果陣列，各筆為{n,nInserted,nModified,ok}，n為主鍵命中筆數，單筆失敗者ok為0並附err，reject回傳錯誤訊息
      */
@@ -1036,11 +1094,13 @@ function WOrmLowdb(opt = {}) {
                 return []
             }
 
-            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
-            data = cloneDeep(data)
+            //cloneInput(cloneDeep), 與外部數據脫勾, 其拋錯者(巢狀不可讀值、原型為null之Date等)一律轉固定詞彙invalid data: must be a readable value,
+            //走同一錯誤路徑(error事件恰一次後reject, data引數為null, 帳本R-WRITE-ERR-01規則8)
+            data = cloneInput(data)
 
-            //autoInsert
-            let autoInsert = get(option, 'autoInsert', true)
+            //autoInsert, 讀取順序同修前(先複製data再讀option); option容器不可讀或autoInsert為拋錯之存取器者經getOptVal轉固定詞彙
+            //(invalid option: / invalid option.autoInsert: must be a readable value), 走同一錯誤路徑(帳本R-WRITE-ERR-01規則8)
+            let autoInsert = getOptVal(option, 'autoInsert', 'option', true)
 
             //check
             if (!isarr(data)) {
@@ -1257,8 +1317,9 @@ function WOrmLowdb(opt = {}) {
                 return []
             }
 
-            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
-            data = cloneDeep(data)
+            //cloneInput(cloneDeep), 與外部數據脫勾, 其拋錯者(巢狀不可讀值、原型為null之Date等)一律轉固定詞彙invalid data: must be a readable value,
+            //走同一錯誤路徑(error事件恰一次後reject, data引數為null, 帳本R-WRITE-ERR-01規則8)
+            data = cloneInput(data)
 
             //check
             if (!isarr(data)) {

@@ -226,12 +226,13 @@ describe('diaglog-wire', function() {
             let w = wo(mkOpt())
             let evs = []
             w.on('error', (m, d, msg) => evs.push([m, msg]))
-            let err = await rejectOf(w.insert({
-                id: 'a',
-                get x() {
+            //外來錯誤之觸發: 原型上之id存取器拋出(於複製之後之procPk讀取時拋出, 屬外來值之整批站點);
+            //自有存取器於複製階段拋出者自第557項對齊輪A3起轉固定詞彙invalid data: must be a readable value(不轉出拋出者, 見unit-readable-align)
+            let err = await rejectOf(w.insert(Object.create({
+                get id() {
                     throw e
                 }
-            }))
+            }, { x: { value: 1, enumerable: true } })))
             assert.strictEqual(diagCases.verify(c, [e, err], ctx), null)
             assert.deepStrictEqual(evs, [['insert', 'timeout']])
         })
@@ -322,12 +323,12 @@ describe('diaglog-wire', function() {
             let w = wo(mkOpt())
             let evs = []
             w.on('error', (m, d, msg) => evs.push([m, msg]))
-            let err = await rejectOf(w.insertBulk([{
-                id: 'a',
-                get x() {
+            //觸發: 原型上之id存取器(複製之後讀取時拋出); 自有存取器於複製階段轉固定詞彙(第557項對齊輪A3)
+            let err = await rejectOf(w.insertBulk([Object.create({
+                get id() {
                     throw orig
                 }
-            }]))
+            }, { x: { value: 1, enumerable: true } })]))
             assert.notStrictEqual(err, orig)
             assert.ok(err instanceof TypeError && err.code === 'EUP')
             assert.strictEqual(err.message, 'up mysql://***@h/db end')
@@ -338,12 +339,12 @@ describe('diaglog-wire', function() {
         it('整批站點(使用端拋出字串): 字串reject經樣式遮罩(Bearer、token=、"password":)', async function() {
             let w = wo(mkOpt())
             let s = 'h Bearer abc.def t token=xyz123 j {"password":"qq"} a authorization: Basic dXNlcjpwdw=='
-            let err = await rejectOf(w.insert({
-                id: 'a',
-                get x() {
+            //觸發: 原型上之id存取器(複製之後讀取時拋出); 自有存取器於複製階段轉固定詞彙(第557項對齊輪A3)
+            let err = await rejectOf(w.insert(Object.create({
+                get id() {
                     throw s
                 }
-            }))
+            }, { x: { value: 1, enumerable: true } })))
             assert.strictEqual(err, 'h Bearer *** t token=*** j {"password":"***"} a authorization: ***')
         })
 
@@ -562,9 +563,10 @@ describe('diaglog-wire', function() {
             assert.strictEqual(count(code, /err: getErrMsg\(/g), 0)
         })
 
-        it('[靜態] 固定詞彙之錯誤: 以mkErr建立者恰9處throw(chkDataDate、procPk、procWellFormed、insertBulk主鍵衝突、save逐筆之前置檢核與合併階段各1, 及第557項之可讀性檢核assertReadable 1與assertReadableData之標籤讀取、唯一元素自讀各1), 其餘new Error僅3處(建構檢核、procFind之isoFind、select不可達之固定訊息)', function() {
+        it('[靜態] 固定詞彙之錯誤: 以mkErr建立者恰6處throw(chkDataDate、procPk、procWellFormed、insertBulk主鍵衝突、save逐筆之前置檢核與合併階段各1), 另以mkReadErr建立之「不可讀」拒絕恰6處throw(第557項: assertReadable 1、assertReadableData之標籤讀取與唯一元素自讀各1、getOptVal之容器與成員各1、cloneInput 1; 皆登錄為自有錯誤與不可讀拒絕), 其餘new Error僅3處(建構檢核、procFind之isoFind、select不可達之固定訊息)', function() {
             let code = stripComments(fs.readFileSync(srcFile, 'utf8'))
-            assert.strictEqual(count(code, /throw mkErr\(/g), 9)
+            assert.strictEqual(count(code, /throw mkErr\(/g), 6)
+            assert.strictEqual(count(code, /throw mkReadErr\(/g), 6)
             let news = code.split('\n').filter((line) => /new Error\(/.test(line)).map((v) => v.trim())
             let prefixes = [
                 'let err = new Error(msg)',

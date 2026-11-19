@@ -23,8 +23,8 @@ describe('readable-probe', function() {
 
     //hostile values, 每次呼叫重建(含有狀態者)
     //str/bol: 純量站點(isestr、isbol判為false之分支)是否不可讀(chkReadable回非空, 拋出固定詞彙invalid <名稱>: must be a readable value);
-    //data: 於寫入入口之data為'reject'(資料站點檢核判為不可讀而拋出固定詞彙, 即dfixed為true; 或判斷函數讀取成功而其後cloneDeep於try內拋出拋出者之原訊息msg, 即dfixed為false, 皆走原通道)或'early'(可讀而無效, 早退, 不變)
-    //msg為拋出者之原訊息(字串全等, 或RegExp比對), 僅於dfixed為false之data站點出現; dfixed於KINDS定義之後依DATA_NATURAL推得
+    //data: 於寫入入口之data為'reject'(資料站點檢核判為不可讀而拋出固定詞彙; 或判斷函數讀取成功而其後cloneInput之cloneDeep於try內拋錯, 第557項對齊輪A3起同為固定詞彙, 皆走原通道, error事件之data為null)或'early'(可讀而無效, 早退, 不變)
+    //msg為拋出者之原訊息(字串全等, 或RegExp比對), 供斷言其不被轉出(DATA_NATURAL者); dfixed對所有'reject'者皆為true
     let FIXED = (name) => `invalid ${name}: must be a readable value`
     let revoked = (target) => () => {
         let r = Proxy.revocable(target(), {})
@@ -190,14 +190,16 @@ describe('readable-probe', function() {
             },
         },
     ]
-    //DATA_NATURAL: 資料站點之判斷函數讀取成功而有效(不進檢核), 其後cloneDeep於try內才拋錯者, 訊息為拋出者之原訊息; 其餘'reject'者為檢核判為不可讀, 訊息為固定詞彙
+    //DATA_NATURAL: 資料站點之判斷函數讀取成功而有效(不進檢核), 其後cloneInput(cloneDeep)於try內才拋錯者(第557項對齊輪A3前訊息為拋出者之原訊息);
+    //A3起此類與檢核判為不可讀者同為固定詞彙invalid data: must be a readable value(複製處之catch不分辨), 故dfixed對所有'reject'者皆為true,
+    //DATA_NATURAL僅用於標明此類之來源(判斷函數讀取成功, 由複製階段才拋錯), 並於測試中斷言拋出者之原訊息(msg)不被轉出
     let DATA_NATURAL = [
         'Proxy whose has trap throws',
         'one-element array whose [0] getter throws from the 2nd read',
         'Proxy whose ownKeys throws from the 2nd call',
     ]
     for (let k of KINDS) {
-        k.dfixed = k.data === 'reject' && !DATA_NATURAL.includes(k.key)
+        k.dfixed = k.data === 'reject'
     }
     let KINDS_STR_T = KINDS.filter((v) => v.str)
     let KINDS_STR_F = KINDS.filter((v) => !v.str)
@@ -222,8 +224,9 @@ describe('readable-probe', function() {
         w.fsDeleteFolder(url)
     })
 
-    //chkBlocked, 原失敗通道之共同斷言: reject為Error且訊息為預期訊息(檢核判為不可讀者為固定詞彙, cloneDeep於try內拋錯者為拋出者之原訊息), error事件恰一次且先於reject, 不發change
-    let chkBlocked = (out, mode, msg, d) => {
+    //chkBlocked, 原失敗通道之共同斷言: reject為Error且訊息為預期訊息(固定詞彙invalid <名稱>: must be a readable value), error事件恰一次且先於reject, 不發change,
+    //error事件之data引數為null(第557項對齊輪A4: 入口階段之拒絕不把不可讀之值交給訂閱函數)
+    let chkBlocked = (out, mode, msg) => {
         assert.strict.equal(out.ok, false, `${mode} should reject`)
         assert.strict.ok(out.err instanceof Error, `${mode} should reject with Error`)
         assert.strict.ok(okMsg(msg, out.err.message), `${mode} message should be ${msg instanceof RegExp ? msg : `"${msg}"`}, got "${out.err.message}"`)
@@ -234,9 +237,7 @@ describe('readable-probe', function() {
         assert.strict.equal(evErr[0].mode, mode)
         assert.strict.equal(evErr[0].err, out.err.message, `${mode} error event should carry the reject message`)
         assert.strict.equal(out.evs.filter((v) => v.t === 'change').length, 0, `${mode} should not emit change`)
-        if (d !== undefined) {
-            assert.strict.ok(evErr[0].data === d, `${mode} error event data should be the caller's input`)
-        }
+        assert.strict.ok(evErr[0].data === null, `${mode} error event data should be null (A4)`) //boolean比對: 失敗時斷言訊息不致檢視不可讀之值
     }
 
     //資料型站點(帳本R-WRITE-ERR-01規則7): data為呼叫端給的值, 讀取即拋錯者走原失敗通道, 而非被判為輸入無效而早退; 修前即可讀而無效者仍早退
@@ -265,7 +266,11 @@ describe('readable-probe', function() {
                             let snapBefore = await snap(wo)
                             let d = kind.mk()
                             let out = await ob.run(() => entry.call(wo, d))
-                            chkBlocked(out, entry.fn, kind.dfixed ? FIXED('data') : kind.msg, d)
+                            chkBlocked(out, entry.fn, FIXED('data'))
+                            //A3: 拋出者(判斷函數讀取成功而複製階段才拋錯者, DATA_NATURAL)之原訊息不被轉出
+                            if (DATA_NATURAL.includes(kind.key)) {
+                                assert.strict.ok(!okMsg(kind.msg, out.err.message) && !okMsg(kind.msg, out.evs.filter((v) => v.t === 'error')[0].err), `${entry.fn} should not echo the thrower's message`)
+                            }
                             assert.deepStrictEqual(await snap(wo), snapBefore, `${entry.fn} database should be unchanged`)
                             let r = await wo.insert({ id: `next-${nNext++}` })
                             assert.strict.equal(r.nInserted, 1, `${entry.fn} following insert should work`)
@@ -353,7 +358,7 @@ describe('readable-probe', function() {
                 let snapBefore = await snap(wo)
                 let d = { id: 'o1', secret: 'x' }
                 let out = await ob.run(() => wo.insert(d, { returnList: kind.mk() }))
-                chkBlocked(out, 'insert', FIXED('option.returnList'), d)
+                chkBlocked(out, 'insert', FIXED('option.returnList'))
                 assert.deepStrictEqual(await snap(wo), snapBefore, 'database should be unchanged')
                 let r = await wo.insert({ id: `next-${nNext++}` })
                 assert.strict.equal(r.nInserted, 1)
@@ -562,13 +567,14 @@ describe('readable-probe', function() {
                 }
             })
         }
-        it('array whose [1] getter throws: still rejects through the cloneDeep path (unchanged)', async function() {
+        it('array whose [1] getter throws: still rejects through the cloneDeep path (same channel; A3: fixed vocabulary, data null)', async function() {
             let wo = mk('ctl-elem1')
             let ob = mkObserver(wo)
             let a = [{ id: 'k0' }, 0]
             Object.defineProperty(a, '1', { get: boom('elem1-boom'), enumerable: true })
             let out = await ob.run(() => wo.insert(a))
-            chkBlocked(out, 'insert', 'elem1-boom', a)
+            chkBlocked(out, 'insert', FIXED('data'))
+            assert.strict.ok(!out.err.message.includes('elem1-boom'), 'the thrower\'s message is not echoed')
             assert.deepStrictEqual(await snap(wo), [])
         })
     })
