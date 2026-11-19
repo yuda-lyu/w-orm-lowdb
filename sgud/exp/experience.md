@@ -76,3 +76,14 @@
 - **打包驗證**:以 `toolg/gDistRollup.mjs` 同設定建到 tmp 並實跑 UMD(insert、change 訂閱函數拋錯之 funLog、損毀檔之 reject 遮罩);wsemi 之診斷模組不含靜態 Node 內建 import,UMD 內唯一之 `require("util")` 來自 lodash 之 `nodeUtil`.
 - 測試鎖等待:本機常有他套件持鎖,單次 `--lock` 等 1.5–2 分鐘,合併成少次執行(變異腳本內部串行跑 27 變體 + 基準,一次 33 秒).
 - 本輪探針/變異/建置腳本備份於 `C:\opensrcOper\dnow\20261029002013\agent-out\mig-lowdb-evidence\`,本機 `./tmp/mig-lowdb/` 已清除.
+
+## wsemi 判斷函數不拋錯後之防線修復(olw492i)(2026-11-19)
+
+- **症狀與成因**: wsemi 1.9.69 起判斷函數(`isestr`、`isbol`、`iseobj`、`isearr`、`haskey`)對讀取即拋錯之值回 `false`;本庫之「error 事件恰一次後 reject」等防線有一部分是借判斷函數之拋錯成立,連動跟跑時 `unit-write-pre-error` 轉紅 12 案.**只修紅燈會漏站點**: 測試只紅在寫入入口之 `data`,實際行為差異於探測集合(21 種敵意值 × 29 個入口呼叫形 = 609 格)共 123 格,其中 111 格(`selectByPk` 之 pk、`insert` 之 `option.returnList`、建構函式 5 個選項、`getErrMsg`、其餘敵意值之 `data`)無任何既有測試.
+- **找站點之法(新舊並跑)**: `npm pack wsemi@<舊版>` 解到 `./tmp/<任務>/old/node_modules/wsemi`,把 `src/` 複本放 `./tmp/<任務>/old/src/`(裸引用自 `./tmp/…` 向上解析到 repo 之 `node_modules`,不需 junction),以同一支探測腳本對「舊 wsemi」「HEAD + 新 wsemi」「修後」三者各跑一次,逐入口餵敵意值,比對行為(resolve/reject、事件、資料庫).`git archive HEAD src test` 解到 `./tmp/` 作修前紅.修後與舊 wsemi 之差異須只剩訊息文字與自動產生之主鍵.
+- **探針之讀取範圍須逐判斷函數對齊修前**(外審一輪即指出首版範圍有偏): 首版以「標籤 + `ownKeys` 等」一體之探針涵蓋所有站點,實測 `isbol`(修前為 lodash `isBoolean`,另讀 `Symbol.toStringTag` 之 `has` 陷阱與屬性描述子,函數值不讀)、`isestr`(標籤式,標籤為 `String` 者另讀 `length`)、`iseobj`(for…in,含原型鏈上之 Proxy,只走字串鍵)之讀取集合各不同,一體探針會在某些值上「多拋」(修前可讀者變不可讀)或「少拋」.改為 `probeReadable(值, kind)` 三種 kind 後,對 21 種敵意值 × 13 站點之 R/. 表與修前舊 wsemi **逐格相同**(`tmp` 表 `table.mjs` 之輸出).
+- **探針放在判斷函數回 `false` 之後,不放前面**: 放前面會多讀一次——「第 2 次讀取才拋錯」之值(單元素陣列之 `[0]` getter、`ownKeys` 陷阱)原本為「判斷函數第 1 次讀成功而有效 → `cloneDeep` 第 2 次讀拋錯 → 原通道」,探針先讀第 1 次後判斷函數讀第 2 次拋錯被吞成 `false` 而早退,**探針自己造成回歸**(變異 P01 驗證).放後面另有好處: 有效資料之路徑零額外讀取與成本.以「同形陣列單獨呼叫 `isearr` + `cloneDeep` 之 getter 讀取次數」為基準鎖定讀取次數(不寫死數字,wsemi 內部讀取數改變時不致誤紅).
+- **容易漏之站點**: `getErrMsg` 之 `isestr(message)`——呼叫端拋出之值其 `message` 為不可讀者(已撤銷之 Proxy 等),修前 `del` 逐筆之 `procMsg`(不包 `try`)拋錯使整批 reject,修後(未探針)改為該筆 `ok:0` 附 `[object Object]`.只靠「新舊並跑」之敵意值集合含「拋出值之 `message` 為敵意值」才掃得到(`emitError` 有 `try` 與 `diag.err` 先處理,走它掃不到).
+- **等價/不測之處**: 拋出者為 `Reflect.has` 陷阱而其他讀取皆可者,於 `isestr` 站點修前不讀(`has` 陷阱拋錯之 Proxy 當 `pk` 修前回 `null`),探針依 kind 不讀,對照案鎖定.包裝物件(`new String`/`new Boolean`)之行為改變來自 wsemi 1.9.69 之「只收原始值」(`{ id: new String('x') }` 修前 reject `invalid id: not a string`,現被視為無有效主鍵而改用自動產生之主鍵;`opt.db` 為 `new String` 修前建構時 throw,現用預設),非探針所致,不在規則 7 範圍;依 dspec〈輸入參數之檢測機制〉(使用者 2026-11-16 定甲,W-20)判斷函數只收原始值、以其守門者收到包裝物件依失敗通道處理(opt 視為未給),屬預期,非缺陷.
+- **變異之設計**: 以 `quiet-run --lock` 逐變異各跑一次,變異置於 `./tmp/…/mut/<編號>/src` 副本(不動 repo);除「各站點移除探針」外,另做「探針本體缺一項讀取」「過度擴大(讀函數值、`str` 讀 `has`、`data` 對非 Array 標籤皆走訪、陣列讀全部元素、改含 Symbol 鍵)」「次序(探針移到判斷函數之前)」「種類誤用」四類;過度擴大類須有對照案才殺得死,故對照案刻意含: `Map` 標籤之 Proxy 其 `ownKeys` 拋錯者、只有 Symbol 鍵之 Proxy、`[1]` 讀取次數、有效單元素陣列之讀取次數.
+- **本 repo 之工作樹換行為 LF**(`autocrlf` 為 true,提交時由 git 轉換): 前述「Edit/Write 皆保持 CRLF」已過時,以 `grep -c "$(printf '\r')$"` 實測為 0.
