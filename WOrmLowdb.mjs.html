@@ -96,6 +96,53 @@ let isOwnErr = (err) => {
 }
 
 
+//probeReadable, 呼叫端給的值之可讀性探針(單一來源, 帳本R-WRITE-ERR-01規則7): 不可讀者原樣拋出取值時之錯誤, 由站點所在之try(寫入入口與selectByPk)或建構函式之同步throw走原失敗通道;
+//why: wsemi(1.9.69起)之判斷函數(isestr、isbol、iseobj、isearr、haskey等)對讀取即拋錯之值(拋錯之Symbol.toStringTag、已撤銷之Proxy、陷阱拋錯之Proxy、元素getter拋錯之陣列)一律回false而不拋錯,
+//本套件原借判斷函數之拋錯, 使此類輸入走「error事件恰一次後reject、資料庫不變」: 判斷函數不再拋錯後, 此類值被當成「輸入無效」而早退(回n為0、不發事件)或被當成選項預設值, 防線失效,
+//故凡判定呼叫端給的值之站點, 於判斷函數回false(無效或不可讀, 二者判斷函數不分)時, 以本探針明確區分: 不可讀者拋出, 可讀而型別不符者(數字、字串等)本探針不拋, 仍依判斷函數判為無效, 行為不變;
+//判斷函數回true(有效)時不探(其已讀成功, 其後之cloneDeep等照常讀取, 讀取次序與次數同修前, 有效資料之路徑零額外成本), 且探針於判斷函數之後, 故不致把「第2次讀取才拋錯」之值由原通道改判為早退
+//探針依站點所對應之判斷函數分三種(kind), 讀取範圍各取該判斷函數於修前(wsemi 1.9.68)所讀取者, 不多不少(多讀會把修前可讀之值多判為不可讀; 不呼叫getter、不展開二進位與集合內容):
+//  'str'(isestr所判者: opt.url/db/cl、pk、錯誤之message; 修前isstr為標籤式): 型別標籤(Object.prototype.toString.call, 會讀Symbol.toStringTag含其getter與Proxy之get陷阱, 已撤銷之Proxy於此拋錯,
+//    物件與函數皆讀); 標籤為String者另讀length(修前isestr以length判空)
+//  'bol'(isbol所判者: opt.useCache/autoGenPk、option.returnList; 修前isbol為lodash isBoolean): 只讀typeof為'object'者(函數不讀)——Symbol.toStringTag之has陷阱,
+//    有則再讀其自有屬性描述子, 其後讀型別標籤
+//  'data'(iseobj與isearr所判者: 各寫入入口之data): 型別標籤; 標籤為'[object Object]'者以與iseobj相同之for...in加hasOwnProperty走訪
+//    (觸發ownKeys、getOwnPropertyDescriptor、getPrototypeOf陷阱含原型鏈上者; 只走字串鍵, 不含Symbol鍵);
+//    標籤為'[object Array]'者讀length, 且length為1時讀唯一元素(同isearr, 元素之getter於此被呼叫); 其餘元素與巢狀值由其後之cloneDeep讀取, 其拋錯者於try內走同一錯誤路徑
+//  標籤為其他者(Date、Map、型別陣列等)'data'只讀標籤, 不展開(型別陣列之鍵為全部索引, 展開即配置同量之字串); 原始值恆可讀
+let probeReadable = (v, kind) => {
+    if (v === null || (typeof v !== 'object' &amp;&amp; typeof v !== 'function')) {
+        return
+    }
+    if (kind === 'bol') {
+        if (typeof v === 'object') {
+            if (Reflect.has(v, Symbol.toStringTag)) {
+                Reflect.getOwnPropertyDescriptor(v, Symbol.toStringTag)
+            }
+            Object.prototype.toString.call(v)
+        }
+        return
+    }
+    let tag = Object.prototype.toString.call(v)
+    if (kind === 'str') {
+        if (tag === '[object String]') {
+            Reflect.get(v, 'length')
+        }
+        return
+    }
+    if (tag === '[object Object]') {
+        for (let k in v) {
+            Object.prototype.hasOwnProperty.call(v, k)
+        }
+    }
+    else if (tag === '[object Array]') {
+        if (v.length === 1) {
+            Reflect.get(v, 0)
+        }
+    }
+}
+
+
 /**
  * 操作資料庫(lowdb)
  *
@@ -169,9 +216,13 @@ function WOrmLowdb(opt = {}) {
         }
     }
 
+    //選項值為呼叫端給的值: 判斷函數回false時先經probeReadable, 不可讀者(拋錯之Symbol.toStringTag、已撤銷之Proxy等)原樣拋出(建構時同步throw), 不被判斷函數吞成預設值(帳本R-WRITE-ERR-01規則7);
+    //可讀而型別不符者仍忽略並用預設
+
     //url
     let url = get(opt, 'url')
     if (!isestr(url)) {
+        probeReadable(url, 'str')
         url = './db.json'
     }
     else {
@@ -181,6 +232,7 @@ function WOrmLowdb(opt = {}) {
     //db
     let db = get(opt, 'db')
     if (!isestr(db)) {
+        probeReadable(db, 'str')
         db = 'worm'
     }
     else {
@@ -190,6 +242,7 @@ function WOrmLowdb(opt = {}) {
     //cl
     let cl = get(opt, 'cl')
     if (!isestr(cl)) {
+        probeReadable(cl, 'str')
         cl = 'test'
     }
     else {
@@ -199,6 +252,7 @@ function WOrmLowdb(opt = {}) {
     //useCache
     let useCache = get(opt, 'useCache')
     if (!isbol(useCache)) {
+        probeReadable(useCache, 'bol')
         useCache = false
     }
 
@@ -206,6 +260,7 @@ function WOrmLowdb(opt = {}) {
     //否則同一資料表將混入兩種來源之主鍵而難以追溯
     let autoGenPk = get(opt, 'autoGenPk')
     if (!isbol(autoGenPk)) {
+        probeReadable(autoGenPk, 'bol')
         autoGenPk = true
     }
 
@@ -463,6 +518,10 @@ function WOrmLowdb(opt = {}) {
         if (isestr(m)) {
             return m
         }
+
+        //m為呼叫端拋出之值之message(可為不可讀者, 如已撤銷之Proxy): 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出(帳本R-WRITE-ERR-01規則7);
+        //emitError包try而以固定訊息取代(同修前), 逐筆結果之procMsg不包try, 其拋出者經pmSeries使整批reject(同修前)
+        probeReadable(m, 'str')
         return String(err)
     }
 
@@ -675,9 +734,16 @@ function WOrmLowdb(opt = {}) {
         let res = null
         try {
 
-            //check, 含NUL或孤立代理字元之主鍵亦屬無效(chkPk): 此類主鍵不可能由本套件寫入(寫入側已拒收), 回null而不reject, 不發出error事件
-            if (!isestr(pk) || chkPk(pk) !== null) {
+            //check, pk為呼叫端給的值: isestr回false時以probeReadable區分, 不可讀者(拋錯之Symbol.toStringTag、已撤銷之Proxy等)原樣拋出, 走catch之error事件後reject, 不被判為無效主鍵而回null(帳本R-WRITE-ERR-01規則7)
+            if (!isestr(pk)) {
+                probeReadable(pk, 'str')
+
                 //未給有效主鍵值視為查無數據
+                return null
+            }
+
+            //check, 含NUL或孤立代理字元之主鍵亦屬無效(chkPk): 此類主鍵不可能由本套件寫入(寫入側已拒收), 回null而不reject, 不發出error事件
+            if (chkPk(pk) !== null) {
                 return null
             }
 
@@ -742,11 +808,15 @@ function WOrmLowdb(opt = {}) {
             //returnList, 讀取呼叫端傳入之option、判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01)
             let returnList = get(option, 'returnList')
             if (!isbol(returnList)) {
+                //帳本R-WRITE-ERR-01規則7: option.returnList不可讀者原樣拋出, 不被isbol判為預設值
+                probeReadable(returnList, 'bol')
                 returnList = false
             }
 
-            //check, 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
+            //check, 輸入無效者直接回傳, 不經catch之後之收尾且不發事件;
+            //data為呼叫端給的值: 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
             if (!iseobj(data) &amp;&amp; !isearr(data)) {
+                probeReadable(data, 'data')
                 if (returnList) {
                     //輸入無效, 對齊save與del之空陣列規定
                     return []
@@ -881,8 +951,10 @@ function WOrmLowdb(opt = {}) {
         let res = null
         try {
 
-            //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
+            //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件;
+            //data為呼叫端給的值: 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
             if (!iseobj(data) &amp;&amp; !isearr(data)) {
+                probeReadable(data, 'data')
                 return {
                     n: 0,
                     nInserted: 0,
@@ -991,8 +1063,10 @@ function WOrmLowdb(opt = {}) {
         let res = null
         try {
 
-            //check, 判定data、cloneDeep與讀取呼叫端傳入之option皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
+            //check, 判定data、cloneDeep與讀取呼叫端傳入之option皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件;
+            //data為呼叫端給的值: 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
             if (!iseobj(data) &amp;&amp; !isearr(data)) {
+                probeReadable(data, 'data')
                 return []
             }
 
@@ -1210,8 +1284,10 @@ function WOrmLowdb(opt = {}) {
         let res = null
         try {
 
-            //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
+            //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件;
+            //data為呼叫端給的值: 判斷函數回false時以probeReadable區分, 不可讀者原樣拋出而走catch(error事件恰一次後reject), 不被判為無效而早退(帳本R-WRITE-ERR-01規則7)
             if (!iseobj(data) &amp;&amp; !isearr(data)) {
+                probeReadable(data, 'data')
                 return []
             }
 
@@ -1507,7 +1583,7 @@ export default WOrmLowdb
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Nov 19 2026 16:34:57 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Nov 19 2026 19:14:57 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
