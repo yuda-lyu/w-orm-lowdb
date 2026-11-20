@@ -98,7 +98,10 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如選項或資�
 註: 數據以JSON存檔，Date存入後為ISO字串；insert、insertBulk與save寫入之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject，詳見各函數與README。</p>
 <p>主鍵(id)之未帶與給了(w-orm系列規則): 只有id為undefined、null、空字串(含鍵不存在)視為未帶，autoGenPk為true時自動產生，為false時整批reject(can not &lt;入口&gt; by data[k] without valid id when autoGenPk is false)；
 其餘一律視為給了，給了而非字串者(數字、布林、物件、陣列、String包裝物件、Symbol、BigInt等)一律拒絕而不補值、不替換為新主鍵(主鍵為資料之身分，換成新值寫入事後無從對應)，不隨autoGenPk改變，
-訊息為固定詞彙invalid id: not a string at [data[k].id]而不回顯值，失敗通道依各入口既有者: insert與insertBulk整批reject，save與del該筆ok為0並附err，selectByPk回null；</p>
+訊息為固定詞彙invalid id: not a string at [data[k].id]而不回顯值，失敗通道依各入口既有者: insert與insertBulk整批reject，save與del該筆ok為0並附err，selectByPk回null；
+主鍵只認自有可列舉之資料屬性: 列之id為繼承(原型鏈上，如Object.create({ id: 'a9' })或類別原型上之getter、資料屬性)或自有不可列舉者視為未帶，不論繼承值為何(字串、數字、物件)，
+autoGenPk為true時自動產生並以自有屬性寫入，為false時依「未帶」整批reject；del對繼承之有效字串id視為未給(該筆ok為0並附invalid id: not a string at [data[k].id])，不刪除同值之既有列；
+原因: 序列化只存自有屬性，若把繼承之id當成已帶，會寫入無id欄之列(主鍵遺失)或與資料庫內同值之既有列衝突、覆寫或誤刪；selectByPk收純量pk，無此問題；</p>
 <p>呼叫端給的值不可讀(讀取即拋錯，如拋錯之Symbol.toStringTag、已撤銷之Proxy、陷阱拋錯之Proxy、元素getter拋錯之陣列)者，於wsemi之判斷函數判為無效之分支以wsemi之chkReadable分辨，走原失敗通道並以固定詞彙拒絕，不被判為輸入無效而早退或當成選項預設值：
 寫入入口(insert、insertBulk、save、del)之data與insert之option.returnList、selectByPk之pk為整批reject(error事件恰一次後reject，資料庫不變)，建構函式之opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk為同步throw，
 訊息為invalid data: must be a readable value、invalid option.returnList: must be a readable value、invalid pk: must be a readable value、invalid opt.&lt;名&gt;: must be a readable value(不含拋出者之原訊息與值)；
@@ -132,7 +135,7 @@ U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不�
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line212">line 212</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line215">line 215</a>
     </li></ul></dd>
     
 
@@ -464,7 +467,7 @@ U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不�
                 </td>
             
 
-            <td class="description last"><p>輸入insert、insertBulk與save於數據未帶主鍵(本套件為id欄位，id為undefined、null、空字串或無此鍵)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵者將reject；給了而非字串之主鍵不論此選項一律拒絕而不替換</p></td>
+            <td class="description last"><p>輸入insert、insertBulk與save於數據未帶主鍵(本套件為id欄位，id為undefined、null、空字串、無此鍵，或id非自有可列舉之屬性〔繼承、自有不可列舉〕)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵者將reject；給了而非字串之主鍵不論此選項一律拒絕而不替換</p></td>
         </tr>
 
     
@@ -666,7 +669,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1495">line 1495</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1526">line 1526</a>
     </li></ul></dd>
     
 
@@ -844,7 +847,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1306">line 1306</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1331">line 1331</a>
     </li></ul></dd>
     
 
@@ -936,7 +939,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
 
             
 
-            <td class="description last"><p>輸入數據物件或陣列；id非字串(含未給)者該筆ok為0並附err，讀取即拋錯者整批reject(invalid data: must be a readable value)</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；id非字串(含未給、繼承或自有不可列舉者，只認自有可列舉之屬性)者該筆ok為0並附err，讀取即拋錯者整批reject(invalid data: must be a readable value)</p></td>
         </tr>
 
     
@@ -1010,7 +1013,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line970">line 970</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line995">line 995</a>
     </li></ul></dd>
     
 
@@ -1102,7 +1105,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
 
             
 
-            <td class="description last"><p>輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，id為繼承或自有不可列舉者視為未帶(只認自有可列舉之屬性)，讀取即拋錯者整批reject(invalid data: must be a readable value)</p></td>
         </tr>
 
     
@@ -1175,7 +1178,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line822">line 822</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line847">line 847</a>
     </li></ul></dd>
     
 
@@ -1283,7 +1286,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
                 </td>
             
 
-            <td class="description last"><p>輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，id為繼承或自有不可列舉者視為未帶(只認自有可列舉之屬性)，讀取即拋錯者整批reject(invalid data: must be a readable value)</p></td>
         </tr>
 
     
@@ -1464,7 +1467,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1083">line 1083</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line1108">line 1108</a>
     </li></ul></dd>
     
 
@@ -1572,7 +1575,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
                 </td>
             
 
-            <td class="description last"><p>輸入數據物件或陣列；id給了而非字串者該筆ok為0並附err(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；id給了而非字串者該筆ok為0並附err(invalid id: not a string at [data[k].id])而不替換為新主鍵，id為繼承或自有不可列舉者視為未帶(只認自有可列舉之屬性；autoGenPk為true時補新主鍵，為false時整批reject)，讀取即拋錯者整批reject(invalid data: must be a readable value)</p></td>
         </tr>
 
     
@@ -1754,7 +1757,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line750">line 750</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line775">line 775</a>
     </li></ul></dd>
     
 
@@ -1914,7 +1917,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line682">line 682</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line707">line 707</a>
     </li></ul></dd>
     
 
@@ -2099,7 +2102,7 @@ select亦納入序列化，令其不致與寫入之整檔替換交錯。</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line326">line 326</a>
+        <a href="WOrmLowdb.mjs.html">WOrmLowdb.mjs</a>, <a href="WOrmLowdb.mjs.html#line329">line 329</a>
     </li></ul></dd>
     
 
@@ -2183,7 +2186,7 @@ select亦納入序列化，令其不致與寫入之整檔替換交錯。</p>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Nov 20 2026 10:40:08 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Nov 20 2026 12:56:06 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

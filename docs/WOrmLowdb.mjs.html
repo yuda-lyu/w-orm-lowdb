@@ -217,6 +217,9 @@ let assertReadableData = (v) => {
  * 主鍵(id)之未帶與給了(w-orm系列規則): 只有id為undefined、null、空字串(含鍵不存在)視為未帶，autoGenPk為true時自動產生，為false時整批reject(can not &lt;入口> by data[k] without valid id when autoGenPk is false)；
  * 其餘一律視為給了，給了而非字串者(數字、布林、物件、陣列、String包裝物件、Symbol、BigInt等)一律拒絕而不補值、不替換為新主鍵(主鍵為資料之身分，換成新值寫入事後無從對應)，不隨autoGenPk改變，
  * 訊息為固定詞彙invalid id: not a string at [data[k].id]而不回顯值，失敗通道依各入口既有者: insert與insertBulk整批reject，save與del該筆ok為0並附err，selectByPk回null；
+ * 主鍵只認自有可列舉之資料屬性: 列之id為繼承(原型鏈上，如Object.create({ id: 'a9' })或類別原型上之getter、資料屬性)或自有不可列舉者視為未帶，不論繼承值為何(字串、數字、物件)，
+ * autoGenPk為true時自動產生並以自有屬性寫入，為false時依「未帶」整批reject；del對繼承之有效字串id視為未給(該筆ok為0並附invalid id: not a string at [data[k].id])，不刪除同值之既有列；
+ * 原因: 序列化只存自有屬性，若把繼承之id當成已帶，會寫入無id欄之列(主鍵遺失)或與資料庫內同值之既有列衝突、覆寫或誤刪；selectByPk收純量pk，無此問題；
  *
  * 呼叫端給的值不可讀(讀取即拋錯，如拋錯之Symbol.toStringTag、已撤銷之Proxy、陷阱拋錯之Proxy、元素getter拋錯之陣列)者，於wsemi之判斷函數判為無效之分支以wsemi之chkReadable分辨，走原失敗通道並以固定詞彙拒絕，不被判為輸入無效而早退或當成選項預設值：
  * 寫入入口(insert、insertBulk、save、del)之data與insert之option.returnList、selectByPk之pk為整批reject(error事件恰一次後reject，資料庫不變)，建構函式之opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk為同步throw，
@@ -251,7 +254,7 @@ let assertReadableData = (v) => {
  * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'；含孤立代理字元者建構時throw
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw
  * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
- * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶主鍵(本套件為id欄位，id為undefined、null、空字串或無此鍵)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵者將reject；給了而非字串之主鍵不論此選項一律拒絕而不替換
+ * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶主鍵(本套件為id欄位，id為undefined、null、空字串、無此鍵，或id非自有可列舉之屬性〔繼承、自有不可列舉〕)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵者將reject；給了而非字串之主鍵不論此選項一律拒絕而不替換
  * @param {Boolean} [opt.logDetail=false] 輸入診斷輸出是否改為含資料值與錯誤原文之完整細節(console.log(標籤, 細節)，僅供除錯)，須為true才生效，其餘值忽略，預設false；資料庫檔案位置仍以***遮罩
  * @param {Function} [opt.funLog=null] 輸入診斷輸出函數(label, safe, detail)，須為函數才生效，其餘值忽略，預設無；給予時診斷輸出只交給它而不寫console，safe為不含個資之摘要，detail為完整細節之遮罩拷貝(無細節時不傳此引數)，其拋錯或回傳reject之promise皆不影響操作
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
@@ -597,21 +600,43 @@ function WOrmLowdb(opt = {}) {
         return id === undefined || id === null || id === ''
     }
 
+    //isOwnPk, 列(已cloneDeep之複本)之id是否為自有可列舉之屬性(帳本R-PKOWN-01): 主鍵只認自有可列舉之資料屬性,
+    //繼承(原型鏈上, 如Object.create({ id })或類別原型上之getter/資料屬性)者視為未帶: cloneDeep保留原型, 故v.id會讀得原型上之值而判為已帶,
+    //但序列化(JSON.stringify)只存自有屬性, 結果為寫入無id欄之列(主鍵遺失), 或與資料庫內同值之既有列衝突/覆寫/刪除;
+    //自有不可列舉者於複製時已不被複製(cloneDeep只取自有可列舉鍵), 故於複本上不會出現, 此處以propertyIsEnumerable兼判之;
+    //只在需要分辨時才呼叫(先以既有路徑v.id取值, 值為未帶者免查), 且propertyIsEnumerable不呼叫getter、不讀值, 不致多讀有效輸入
+    let isOwnPk = (v) => {
+        return Object.prototype.propertyIsEnumerable.call(v, 'id')
+    }
+
+    //setPk, 於列(已cloneDeep之複本)補上主鍵值: 非自有可列舉者(缺此屬性、繼承者)以defineProperty定義自有可列舉之資料屬性, 遮蔽原型上之值,
+    //不得以賦值(v.id = id): 原型上之id為唯讀(frozen)或僅有getter者, 嚴格模式下賦值會拋TypeError, 賦值亦會觸發原型上之setter而不產生自有屬性;
+    //自有可列舉者(含值為undefined、null、空字串)與非物件之列(賦值照既有行為拋錯)維持賦值
+    let setPk = (v, id) => {
+        if (v !== null &amp;&amp; (typeof v === 'object' || typeof v === 'function') &amp;&amp; !isOwnPk(v)) {
+            Object.defineProperty(v, 'id', { value: id, writable: true, enumerable: true, configurable: true })
+            return
+        }
+        v.id = id
+    }
+
     //procPk, 依autoGenPk處理各數據之主鍵, 供insert、insertBulk與save共用
+    //未帶主鍵者: id為未帶之值(undefined、null、空字串、無此鍵), 或id非自有可列舉之屬性(繼承, 帳本R-PKOWN-01, 不論繼承值為何);
     //autoGenPk為true時對未帶主鍵者補值; 為false時不補值, 未帶主鍵者屬呼叫端未履行契約, 拋出為整批性錯誤,
     //且檢查於任何寫入之前完成, 故不會有部份筆數已寫入而整批失敗之情形;
-    //給了主鍵者(不論是否為字串、不論autoGenPk)一律原樣通過, 其格式由其後之chkPk(getWellFormedMsg)檢核, 失敗通道依各入口既有者(insert與insertBulk整批reject, save逐筆ok為0), 不隨autoGenPk改變
+    //給了主鍵者(自有可列舉, 不論是否為字串、不論autoGenPk)一律原樣通過, 其格式由其後之chkPk(getWellFormedMsg)檢核, 失敗通道依各入口既有者(insert與insertBulk整批reject, save逐筆ok為0), 不隨autoGenPk改變
+    //先以既有路徑取值(v.id、get(v, 'id')), 判定時值為未帶者短路不查描述子(isNoPk為真即不呼叫isOwnPk; 補值時setPk另查一次以選定寫入方式), 故有效輸入之讀取次序與次數同修前
     let procPk = (data, fnName) => {
         if (autoGenPk) {
             return map(data, function(v) {
-                if (isNoPk(v.id)) {
-                    v.id = genIDSeq()
+                if (isNoPk(v.id) || !isOwnPk(v)) {
+                    setPk(v, genIDSeq())
                 }
                 return v
             })
         }
         each(data, function(v, k) {
-            if (isNoPk(get(v, 'id'))) {
+            if (isNoPk(get(v, 'id')) || !isOwnPk(v)) {
                 throw mkErr(`can not ${fnName} by data[${k}] without valid id when autoGenPk is false`)
             }
         })
@@ -861,7 +886,7 @@ function WOrmLowdb(opt = {}) {
      * 資料庫檔內既有之範圍外Date字串不遷移，仍無法以Date條件正確比較，詳見README
      *
      * @memberOf WOrmLowdb
-     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)
+     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，id為繼承或自有不可列舉者視為未帶(只認自有可列舉之屬性)，讀取即拋錯者整批reject(invalid data: must be a readable value)
      * @param {Object} [option={}] 輸入設定物件，預設為{}；容器本身不可讀者(如已撤銷之Proxy)整批reject(invalid option: must be a readable value)，成員為拋錯之存取器者整批reject(invalid option.&lt;鍵>: must be a readable value)
      * @param {Boolean} [option.returnList=false] 輸入是否改回傳逐筆結果布林值，預設false；非布林值忽略並用預設，讀取即拋錯者整批reject(invalid option.returnList: must be a readable value)。給true時回傳與輸入等長保序之陣列，各筆為{n,nInserted,ok}，nInserted為1即該筆為新增；聚合計數只回答有幾筆是新的，逐筆結果方能回答是哪幾筆，供下游僅對新資料執行昂貴動作。回傳形式由呼叫點靜態決定，共用之結果處理程式碼不可跨不同取值之呼叫點混用
      * @returns {Promise} 回傳Promise，resolve依returnList回傳插入結果：預設回傳聚合物件{n,nInserted,ok}，n為輸入筆數、nInserted為實際插入筆數；returnList為true時回傳逐筆陣列，各筆n恆為1(主鍵命中或經插入)、ok恆為1(insert之錯誤皆屬整批性而reject，不進逐筆)；reject回傳錯誤訊息
@@ -1011,7 +1036,7 @@ function WOrmLowdb(opt = {}) {
      * 註: 數據內任何深度之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject且不寫入任何一筆，規則同insert，詳見insert與README
      *
      * @memberOf WOrmLowdb
-     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)
+     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者整批reject(invalid id: not a string at [data[k].id])而不替換為新主鍵，id為繼承或自有不可列舉者視為未帶(只認自有可列舉之屬性)，讀取即拋錯者整批reject(invalid data: must be a readable value)
      * @returns {Promise} 回傳Promise，resolve回傳插入結果物件{n,nInserted,ok}，n為輸入筆數、nInserted成功時恆等於n，任一筆主鍵已存在則reject回傳錯誤訊息
      */
     async function insertBulkCore(data) {
@@ -1122,7 +1147,7 @@ function WOrmLowdb(opt = {}) {
      * autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合併與覆寫路徑寫入之Date皆來自已檢核之數據，已存在於資料庫之字串不檢核
      *
      * @memberOf WOrmLowdb
-     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者該筆ok為0並附err(invalid id: not a string at [data[k].id])而不替換為新主鍵，讀取即拋錯者整批reject(invalid data: must be a readable value)
+     * @param {Object|Array} data 輸入數據物件或陣列；id給了而非字串者該筆ok為0並附err(invalid id: not a string at [data[k].id])而不替換為新主鍵，id為繼承或自有不可列舉者視為未帶(只認自有可列舉之屬性；autoGenPk為true時補新主鍵，為false時整批reject)，讀取即拋錯者整批reject(invalid data: must be a readable value)
      * @param {Object} [option={}] 輸入設定物件，預設為{}；容器本身不可讀者(如已撤銷之Proxy)整批reject(invalid option: must be a readable value)，成員為拋錯之存取器者整批reject(invalid option.&lt;鍵>: must be a readable value)
      * @param {boolean} [option.autoInsert=true] 輸入是否於儲存時發現原本無數據，則自動改以插入處理，預設為true
      * @returns {Promise} 回傳Promise，resolve回傳與輸入等長之儲存結果陣列，各筆為{n,nInserted,nModified,ok}，n為主鍵命中筆數，單筆失敗者ok為0並附err，reject回傳錯誤訊息
@@ -1347,7 +1372,7 @@ function WOrmLowdb(opt = {}) {
      * 刪除數據，依主鍵刪除
      *
      * @memberOf WOrmLowdb
-     * @param {Object|Array} data 輸入數據物件或陣列；id非字串(含未給)者該筆ok為0並附err，讀取即拋錯者整批reject(invalid data: must be a readable value)
+     * @param {Object|Array} data 輸入數據物件或陣列；id非字串(含未給、繼承或自有不可列舉者，只認自有可列舉之屬性)者該筆ok為0並附err，讀取即拋錯者整批reject(invalid data: must be a readable value)
      * @returns {Promise} 回傳Promise，resolve回傳與輸入等長之刪除結果陣列，各筆為{n,nDeleted,ok}，n為主鍵命中筆數，單筆失敗或未給有效id者ok為0並附err，reject回傳錯誤訊息
      */
     async function delCore(data) {
@@ -1394,6 +1419,12 @@ function WOrmLowdb(opt = {}) {
 
                     //check, 主鍵之檢核(chkPk): 非字串、空字串、含NUL、含孤立代理字元者皆無效
                     let msgPk = chkPk(id)
+
+                    //check, 主鍵只認自有可列舉之屬性(帳本R-PKOWN-01): 有效字串而為繼承者視為未給, 同未給id之處置(chkPk(undefined), 訊息not a string),
+                    //不得以原型上之值刪除同值之既有列; 已為無效者(繼承之空字串、數字等)沿用上方原訊息(不多查描述子)
+                    if (msgPk === null &amp;&amp; !isOwnPk(v)) {
+                        msgPk = chkPk(undefined)
+                    }
 
                     //check
                     if (msgPk !== null) {
@@ -1657,7 +1688,7 @@ export default WOrmLowdb
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Nov 20 2026 10:40:08 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Nov 20 2026 12:56:06 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
