@@ -14,6 +14,7 @@ import { mkObserver } from './lib/mkObserver.mjs'
 //  A4 入口階段拒絕之error事件之data為null(不把不可讀之值交給訂閱函數); 入口階段之後之拒絕(如invalid id、Date年份範圍外)不在此列, data維持為複製
 //  A5 selectByPk之不可讀pk: reject invalid pk: must be a readable value(error事件恰一次); 可讀而非有效者回null(本套件既有)
 //  A6 主鍵給了而非字串: 一律invalid id: not a string at [data[<k>].id], 不隨autoGenPk改變, 不補值
+//  A7 已關閉之實例(條款: 不可讀之資料容器 → error事件data為null, 可讀者維持輸入): 本套件之實例無close()與終態, 不適用; 本組為偵測器(新增close類入口即轉紅)
 //每案使用全新資料庫檔; 「資料庫不變」以直讀檔案位元組比對(不經被測物件之讀取函數); 敵意值每次呼叫重建
 describe('readable-align (A1-A6)', function() {
     let url = './test/_tmp/readable-align'
@@ -516,5 +517,44 @@ describe('readable-align (A1-A6)', function() {
                 assert.strict.equal(out.err.message, 'can not insert by data[0] without valid id when autoGenPk is false')
             })
         }
+    })
+
+    //A7: 已關閉之實例(對齊條款「已關閉之實例收到不可讀之資料容器時, error事件之data為null; 可讀者維持為輸入」)對本套件不適用:
+    //本套件之實例無close()類入口, 亦無已關閉(終態)之狀態, 故無「已關閉守門」可對齊(規則帳本R-WRITE-ERR-01規則8之〈已關閉之實例〉);
+    //本組為偵測器: 日後若新增close類入口(或Symbol.dispose/asyncDispose), 此組轉紅, 須依該條款於守門處(procClosed類)補「不可讀之資料容器 → error事件data為null, 可讀者維持輸入, 巢狀值不探」並改寫本組
+    describe('A7 closed instance: not applicable (the instance has no close() and no terminal state)', function() {
+        //終態入口之名稱全集(其他w-orm-*套件之close或同義之釋放入口)
+        let TERMINAL_NAMES = ['close', 'dispose', 'destroy', 'end', 'disconnect', 'quit', 'shutdown', 'terminate']
+        let HINT = 'a close-like entry was added: add the closed-instance guard (error event data is null for an unreadable data container, the input for a readable one, nested values not probed; see rulebook R-WRITE-ERR-01 rule 8) and rewrite this group'
+
+        for (let name of TERMINAL_NAMES) {
+            it(`the instance has no "${name}" member (own or inherited)`, function() {
+                let t = mk()
+                assert.strict.ok(!(name in t.wo), `${name}: ${HINT}`)
+                assert.strict.equal(typeof t.wo[name], 'undefined', `${name}: ${HINT}`)
+            })
+        }
+        for (let sym of ['dispose', 'asyncDispose']) {
+            it(`the instance has no Symbol.${sym} member (when the runtime defines it)`, function() {
+                let t = mk()
+                if (typeof Symbol[sym] !== 'symbol') {
+                    //執行環境未定義此符號, 無從為成員
+                    return
+                }
+                assert.strict.ok(!(Symbol[sym] in t.wo), `Symbol.${sym}: ${HINT}`)
+            })
+        }
+
+        //對照: 實例無終態, 入口階段拒絕後同一實例仍照常運作(不因拒絕而轉為拒收一切呼叫之狀態)
+        it('control: after an entry-stage rejection the same instance still serves valid calls (no terminal state)', async function() {
+            let t = mk()
+            let out = await t.ob.run(() => t.wo.insert(revoked()))
+            chkReject(out, 'insert', FIXED('data'))
+            let out2 = await t.ob.run(() => t.wo.insert([{ id: 'after1', a: 1 }]))
+            assert.strict.equal(out2.ok, true)
+            assert.strict.equal(out2.evs.filter((v) => v.t === 'error').length, 0)
+            let rows = await t.wo.select()
+            assert.deepStrictEqual(rows, [{ id: 'after1', a: 1 }])
+        })
     })
 })
