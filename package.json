@@ -1,14 +1,14 @@
 {
   "name": "w-orm-lowdb",
-  "version": "1.0.78",
+  "version": "1.0.79",
   "main": "dist/w-orm-lowdb.umd.js",
   "dependencies": {
     "lowdb": "^7.0.1",
     "mingo": "^7.2.7",
-    "wsemi": "^1.9.76"
+    "wsemi": "^1.9.77"
   },
   "devDependencies": {
-    "w-package-tools": "^1.1.30"
+    "w-package-tools": "^1.1.31"
   },
   "scripts": {
     "test": "mocha --parallel \"test/*.test.mjs\" --timeout 180000",
