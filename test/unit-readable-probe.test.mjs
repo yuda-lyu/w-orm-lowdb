@@ -12,7 +12,7 @@ import { mkObserver } from './lib/mkObserver.mjs'
 //1.9.69起判斷函數不拋錯, 此類值被當成「輸入無效」(寫入入口回n為0或[]、selectByPk回null, 皆不發事件)或選項之預設值, 通道失效;
 //本檔驗各站點於判斷函數回false後以wsemi chkReadable區分「可讀而無效」與「不可讀」, 通道恢復, 不可讀者之訊息為固定詞彙invalid <名稱>: must be a readable value(不含拋出者之原訊息與值);
 //檢核之讀取範圍(chkReadable之規則二.4對照): 純量站點(str: opt.url/db/cl、pk、錯誤之message; bol: opt.useCache/autoGenPk、option.returnList)只讀型別標籤(物件與函數皆讀),
-//資料站點(data: iseobj與isearr)為ownKeys(自有鍵與原型鏈, iseobj之超集)加elements:'first'(length與唯一元素之描述子)再加呼叫端自讀唯一元素(chkReadable不呼叫存取器),
+//資料站點(data: iseobj與isearr)為ownKeys(自有鍵與原型鏈, 全部自有鍵之描述子含Symbol鍵〔wsemi 1.9.79起, 第559項⑤〕, iseobj之for...in只走字串鍵之超集)加elements:'first'(length與唯一元素之描述子)再加呼叫端自讀唯一元素(chkReadable不呼叫存取器),
 //故每種值於各站點種類之期望不同(KINDS之str、bol、data欄), 期望依chkReadable之文件化讀取範圍手寫(不由被測函數產生); 另含對照組: 可讀而型別不符者行為不變、不擴大、讀取次序與次數同修前
 describe('readable-probe', function() {
     let url = './test/_tmp/readable-probe'
@@ -139,8 +139,10 @@ describe('readable-probe', function() {
                 return o
             },
         },
-        //for...in只走字串鍵: 只有Symbol鍵之Proxy其getOwnPropertyDescriptor拋錯者, 判斷函數不觸發, 為可讀而無效
-        { key: 'Proxy with only a Symbol key whose descriptor read throws', msg: null, str: false, bol: false, data: 'early', mk: () => new Proxy({}, { ownKeys: () => [Symbol('s')], getOwnPropertyDescriptor: boom('symgopd-boom') }) },
+        //只有Symbol鍵之Proxy其getOwnPropertyDescriptor拋錯者: 判斷函數(iseobj之for...in只走字串鍵)不觸發, 但chkReadable之ownKeys自wsemi 1.9.79(第559項⑤)起
+        //讀全部自有鍵(字串與Symbol)之描述子, 此值之描述子本即不可讀, 故資料站點為不可讀('reject', 固定詞彙invalid data: must be a readable value, 原通道);
+        //純量站點(str、bol)只讀型別標籤, 此值之標籤可讀, 故仍為可讀而無效(str: false、bol: false, 行為不變)
+        { key: 'Proxy with only a Symbol key whose descriptor read throws', msg: 'symgopd-boom', str: false, bol: false, data: 'reject', mk: () => new Proxy({}, { ownKeys: () => [Symbol('s')], getOwnPropertyDescriptor: boom('symgopd-boom') }) },
         //標籤非Object者: 判斷函數(iseobj)不讀鍵, 為可讀而無效(早退); 資料站點之ownKeys只對標籤為[object Object]者給(chkReadable之ownKeys對任何標籤皆讀Reflect.ownKeys, 型別陣列與Buffer會一次展開全部索引鍵), 故ownKeys拋錯者不被讀到
         { key: 'Proxy with a Map tag whose ownKeys throws', msg: null, str: false, bol: false, data: 'early', mk: () => new Proxy({ [Symbol.toStringTag]: 'Map', id: 'z1' }, { ownKeys: boom('maptag-ownkeys-boom') }) },
         //陣列(標籤[object Array]): isarr/isearr不讀鍵, 空陣列為可讀而無效(早退); ownKeys不給

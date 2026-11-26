@@ -4,7 +4,7 @@
 
 ## R-FIND-01 條件(find)之入口檢核
 
-- 狀態: 已套(2026-10-17,第 33 項批 1;外審處置見 `C:\opensrcOper\dnow\20261017093849\agent-out\run02-實作報告.md`).
+- 狀態: 已套(2026-10-17,第 33 項批 1;外審處置見 `主控任務 20261017093849 之run02-實作報告.md`).
 - 單一擁有者: `procFind`(`:291`,`select` `:469`、`delAll` `:1260` 於 `serialize` 佇列之外呼叫)、轉譯層 `isoFind`(`:240`,Date 範圍檢核見 R-FIND-02)與 select/delAll 共用之逐筆判定 `mkMatch`(`:280`,含 `hasProtoName` `:262`).(行號為 2026-10-19 第 2 次執行〔R-DATE-01〕後現況.)共用規則與契約案例表之單一擁有者為 wsemi(`src/cvOrmFind.mjs`、`src/_cvOrmFindCases.mjs`,wsemi ≥ 1.9.19,其帳本 R-FIND-01);本套件**不得**自行放寬運算子或欄名,亦不得把後端專屬限制搬入共用函數,不傳 `opt`(`$in` 上限即共用預設 10000).
 - 規則:
   1. 入口順序: find 檢核(`procFind`)→ `serialize` 佇列(以資料庫檔案路徑為鍵之全域佇列)→ 讀檔.本套件無 `close()`,故無「已關閉」一步.檢核置於佇列**之外**,失敗者發出 `error` 事件(reject 之前恰一次)後直接 reject(`Promise.reject`),訊息原樣(`invalid find: <原因> at [<路徑>]`),不發 `change`,不占用佇列、不等候先前排入之操作,不讀檔、不刪除、不改寫資料庫檔案.
@@ -25,7 +25,7 @@
 
 ## R-FIND-02 轉譯層之 Date 範圍檢核(fail-closed)
 
-- 狀態: 已套(2026-10-19,第 67 項;來源為第 33 項批 1 外審 opus F1/F6,主控裁示 fail-closed,見 `C:\opensrcOper\dnow\20261017093849\review\run02-複審.md`).與 w-orm-level 同一規則同一改法;報告 `C:\opensrcOper\dnow\20261019191931\agent-out\run01-修正報告.md`.
+- 狀態: 已套(2026-10-19,第 67 項;來源為第 33 項批 1 外審 opus F1/F6,主控裁示 fail-closed,見 `主控任務 20261017093849 之run02-複審.md`).與 w-orm-level 同一規則同一改法;報告 `主控任務 20261019191931 之run01-修正報告.md`.
 - 單一擁有者: 轉譯層 `isoFind`(R-FIND-01 規則 3 之 Date→ISO 轉換處,由 `procFind` 呼叫).共用檢核 wsemi `cvOrmFind`(≥ 1.9.20)接受一切有效 `Date`(含範圍外),故本檢核**屬本套件轉譯層**,不改 wsemi,亦不得搬入共用函數.
 - 成因: 數據以 JSON 存檔,Date 為 `toISOString()` 字串,條件內之 Date 轉 ISO 字串後以**字典序**比較(設計 D2).年份介於 0000–9999 之 `toISOString()` 恆為 24 字元 `YYYY-MM-DDTHH:mm:ss.sssZ`,字典序 = 時間序;年份 < 0 或 > 9999 者帶 `-yyyyyy-`/`+yyyyyy-` 前綴(27 字元),且 `+`(0x2B) < `-`(0x2D) < 數字,字典序與時間序顛倒——例: `delAll({ t: { $gt: new Date(8.64e15) } })`(語意「晚於最大日期」,應無命中)會因 `'2026-…' > '+275760-…'` 而命中並刪除所有帶日期之數據;`{ $lt: new Date(8.64e15) }` 則恆無命中.
 - 規則:
@@ -40,12 +40,12 @@
 - 測試: `test/unit-find-whitelist.test.mjs` 之 `describe('date-range')`(165 案: 接受 17 + 內側邊界值 8 值×9 運算子×{select,delAll}(8 案)、拒收 4 值×27 位置、字典序顛倒場景 8、cvOrmFind 訊息優先 2、Date 形態 5(子類別/自訂 `toISOString`/自訂 `getTime`/跨 realm/自訂 `Symbol.toStringTag`)、路徑格式 11(逐字等於 `cvOrmFind` 對同結構給出之路徑)、數據側 1〔第 2 次執行改為以字串模擬舊版既有資料〕、時序 4(佇列之外/`useCache`/檢核先於讀檔/壞條件 `delAll` 不改寫資料庫檔)、邊界存值 1).單檔指令: `npx mocha --no-parallel test/unit-find-whitelist.test.mjs --grep "date-range" --timeout 180000`.全套 616(基準 451 + 165)全綠.
 - 修前紅(對 git HEAD 之 src 搭最終測試,腳本 `tmp/run-head.mjs`): date-range 165 案中**紅 136、綠 29**(綠者為接受側與數據側之對照組).修前探針 `tmp/probe-sentinel.mjs` 重現: `delAll({ t: { $gt: new Date(8.64e15) } })` 刪除全部 4 筆帶日期之資料(`$lt` 哨兵則恆無命中);數據側 `delAll({ t: { $lt: 現在 } })` 刪除哨兵(n=2)——後者**修後仍然如此**(規則 5,數據側不改).
 - 變異(`tmp/mutate-date.mjs`,26 項 + 基準 M00,皆於副本;結果見 w-orm-level `tmp/mut-lowdb.txt`): 拿掉檢核、只檢上界、只檢下界、誤拒 9999 年、誤拒 0000 年、誤拒端點內側年份(2 種)、略過陣列元素/`$and/$or`/`$in/$nin`/直接等值/`$ne/$nin`、只檢 `+` 或只檢 `-` 前綴、reject 時不發 error 事件、訊息回顯值、陣列索引路徑格式、delAll 不檢核、select 不檢核、路徑截短之 5 種變異、reject 時改寫呼叫端物件,**全數轉紅**(最少僅 1 案抓到者: 代理對處理、全路徑截短門檻 121、單鍵截短門檻 31、端點內側 +1 毫秒).
-- 外審(2026-10-19,依 `C:/opensrcOper/tools/review-score-format.md`): sol(`gpt-6.1-sol`/max)與 w-orm-level 同審,3 條(皆「中」,皆屬實,兩套件同樣適用,已處置): 長 Unicode 欄名代理對路徑、接受側內側邊界值與多位置之測試缺格、拒收案例未檢查實際傳入之同一條件物件;beam 15 分鐘無輸出被終止,未產出報告.
+- 外審(2026-10-19,依 `主控之 review-score-format.md`): sol(`gpt-6.1-sol`/max)與 w-orm-level 同審,3 條(皆「中」,皆屬實,兩套件同樣適用,已處置): 長 Unicode 欄名代理對路徑、接受側內側邊界值與多位置之測試缺格、拒收案例未檢查實際傳入之同一條件物件;beam 15 分鐘無輸出被終止,未產出報告.
 - 已知限制補充(外審 sol 數據側觀察,屬規則 5 之延伸,不修): 資料含 `+275760-…` 時,`$gt: 9999 年底` 按時間序應命中卻無命中(漏命中);範圍外 Date 之資料彼此間亦反序;條件為「已序列化之字串」時不經 Date 檢核.README 已載明雙向性.
 
 ## R-DATE-01 數據側(寫入)之 Date 範圍檢核(fail-closed)
 
-- 狀態: 已套(2026-10-19,第 67 項第 2 次執行;使用者 10-19 裁示採 A: 寫入時 reject 範圍外 Date,與條件側 R-FIND-02 一致;報告 `C:\opensrcOper\dnow\20261019191931\agent-out\run02-寫入檢核報告.md`).與 w-orm-level 同一規則同一改法(版號由使用者統籌發布,README/JSDoc 載明「1.0.34 起」).
+- 狀態: 已套(2026-10-19,第 67 項第 2 次執行;使用者 10-19 裁示採 A: 寫入時 reject 範圍外 Date,與條件側 R-FIND-02 一致;報告 `主控任務 20261019191931 之run02-寫入檢核報告.md`).與 w-orm-level 同一規則同一改法(版號由使用者統籌發布,README/JSDoc 載明「1.0.34 起」).
 - 成因: 數據以 JSON 存檔(lowdb 之 `JSONFile` 以 `JSON.stringify(data, null, 2)` 寫檔),紀錄內任何深度之 `Date` 經 `Date.prototype.toJSON` → `toISOString()` 成字串;年份 0000–9999 恆為 24 字元 `YYYY-MM-DDTHH:mm:ss.sssZ`(字典序 = 時間序),年份 < 0 或 > 9999 為 `-yyyyyy-`/`+yyyyyy-` 前綴(27 字元,`+` < `-` < 數字,字典序與時間序顛倒).例: 「永不過期」哨兵 `new Date(8.64e15)` 存為 `+275760-09-13T…`,`delAll({ t: { $lt: new Date() } })` 以字典序判其為過去而刪除.條件側 fail-closed(R-FIND-02)擋不到已存入之數據,故於寫入時拒收.
 - 單一擁有者: `chkDataDate`(`:200`,寫入前走訪與判定之唯一處);與 R-FIND-02 共用 `reIsoDate`、`pathKey`、`pathStr`(各只定義一處,不得為寫入側複製第二份).不放入 wsemi(wsemi 不得修改).
 - 規則:
@@ -62,11 +62,11 @@
 - 測試: `test/unit-date-write.test.mjs`(630 案 = 同 w-orm-level 之 635 案去掉「已關閉先於檢核」5 案;其餘分項同).共用 helper: `test/lib/mkObserver.mjs`、`test/lib/leaves.mjs`(與 `unit-find-whitelist.test.mjs` 共用).本檔由 w-orm-level 版以 w-orm-level `tmp/gen-lowdb-test.mjs` 產生(差異: 資料庫為單一 JSON 檔、無 `close()`、壞資料夾具為壞 JSON 檔).單檔指令: `npx mocha --no-parallel test/unit-date-write.test.mjs --timeout 180000`.全套 1246(基準 616 + 630)全綠.
 - 修前紅(對 git HEAD 之 src 搭最終測試,腳本 w-orm-level `tmp/run-head-write.mjs`): 630 案中**紅 558、綠 72**(綠者為對照組,同 w-orm-level 之 77 去掉「已關閉」5).修前探針 `tmp/probe-write-before.mjs`(w-orm-level 內,兩套件結果相同).
 - 變異(w-orm-level `tmp/mutate-write.mjs <lowdb 根> WOrmLowdb.mjs`,36 項 + 基準 M00,結果見 w-orm-level `tmp/mut-write-lowdb.txt`;M37 另單獨重跑): 同 w-orm-level 之變異集合(見其帳本 R-DATE-01),**全數轉紅**,基準綠(630/630).
-- 外審(2026-10-19,依 `C:/opensrcOper/tools/review-score-format.md`): 與 w-orm-level 同審(見其帳本與報告): sol 額度用盡改派 Argon,8 條,F-01(TypedArray/DataView 自有屬性)、F-06(菱形共用參照指數時間)屬實已修,F-04/F-05 屬實已補測,F-07/F-08 已更正,F-02/F-03 屬刻意構造之物件列為範圍邊界.
+- 外審(2026-10-19,依 `主控之 review-score-format.md`): 與 w-orm-level 同審(見其帳本與報告): sol 額度用盡改派 Argon,8 條,F-01(TypedArray/DataView 自有屬性)、F-06(菱形共用參照指數時間)屬實已修,F-04/F-05 屬實已補測,F-07/F-08 已更正,F-02/F-03 屬刻意構造之物件列為範圍邊界.
 
 ## R-WRITE-ERR-01 寫入入口之前置處理與錯誤路徑(「error 事件恰一次 → reject」)
 
-- 狀態: 已套(2026-10-20,第 80 項第 1 次執行;來源為第 77 項外審 Argon F-03(a),建議檔 `建議w-orm-lowdb修正.md`;與 w-orm-level 同一規則同一改法;報告 `C:\opensrcOper\dnow\20261020113044\agent-out\run01-修正報告.md`;外審處置見 w-orm-level 帳本同節〈外審〉,兩套件同審).
+- 狀態: 已套(2026-10-20,第 80 項第 1 次執行;來源為第 77 項外審 Argon F-03(a),建議檔 `建議w-orm-lowdb修正.md`;與 w-orm-level 同一規則同一改法;報告 `主控任務 20261020113044 之run01-修正報告.md`;外審處置見 w-orm-level 帳本同節〈外審〉,兩套件同審).
 - 成因: 修前 `insertCore`、`insertBulkCore`、`saveCore`、`delCore` 於 `try` 之外有讀取呼叫端輸入之前置處理(讀 `option`、`iseobj(data)`/`isearr(data)` 判定、`cloneDeep(data)`),其拋錯者(原型為 null 或 `constructor` 為 null 之 Date、存取器拋錯、Proxy trap 拋錯、深度過大之 stack overflow 等)使函數 reject 但**不發 `error` 事件**,與其他失敗路徑(先發 error 再 reject)不一致.第 1 次執行對 HEAD 實測(w-orm-lowdb `tmp/probe-claim.mjs`): 4 入口 × 8 種 data 輸入 + 2 種 option 存取器 = 34 格,**全部 reject 且 error 事件 0 次**(資料庫檔不變、無 change).建議書只點名 insert/insertBulk/save 之 `cloneDeep`,實測 `del`(同形)與 `iseobj`/`isearr`/`option` 前置亦同,依任務範圍一併處理.
 - 單一擁有者: 各寫入 `*Core` 之 `try` 區塊與 `emitError`(單一發射點).錯誤路徑為既有之 `catch → isErr → 重設快取 → emitError(mode, data, err) → Promise.reject`,不新增第二條.
 - 規則: 同 w-orm-level 之 R-WRITE-ERR-01 規則 1–6(規則 7 為 2026-11-19 追加,規則 8 為 2026-11-20 第 557 項全族對齊輪追加,見本節末;前置處理全在 `try` 內;訊息為拋出者之原訊息;不變者〔輸入無效之早退〕;error 事件之 `data` 引數與讀取順序〔`insert` 先讀 option 故其 option 拋錯者事件 data 為原值,`save` 先 `cloneDeep` 再讀 option 故為複本〕;快取〔失敗重設、早退不重設〕;拋出值無法轉為字串者以固定訊息 `unknown error` 取代而事件仍恰一次).**規則 1、2、4 之「訊息為拋出者之原訊息」「事件 `data` 為原值/複本」對入口階段(option 之讀取、data 之判定與複製)之失敗已由規則 8 取代(固定詞彙、`data` 為 `null`);複製之後之外來值拋出者仍依規則 1、2、4.**本套件無 `close()`,無「已關閉」案;資料庫為單一 JSON 檔.
@@ -85,7 +85,7 @@
 - 成因: 規則 1–6 之「輸入本身拋錯 → error 事件恰一次 → reject」,於 1.9.68 以前有一部分是**借判斷函數(`iseobj`、`isearr`、`isestr`、`isbol`)讀取呼叫端之值時拋錯**而成立.1.9.69 起判斷函數不拋錯: 讀取即拋錯之值(拋錯之 `Symbol.toStringTag`、已撤銷之 Proxy、`ownKeys`/`getOwnPropertyDescriptor`/`getPrototypeOf`/`has` 陷阱拋錯之 Proxy、`length` 或唯一元素 getter 拋錯之陣列等)被判為「輸入無效」而早退(寫入入口回 `n: 0`/`[]`、`selectByPk` 回 `null`,皆不發事件)、被當成選項之預設值(`option.returnList`、建構選項)或使逐筆之訊息改為 `[object Object]`(`del`/`save` 逐筆之 `procMsg`),原失敗通道失效.
 - 規則: 凡以判斷函數判定**呼叫端給的值**之站點,於判斷函數回 `false` 後以 `assertReadable(值, 名稱[, chkReadable 選項])`(資料站點為 `assertReadableData(值)`)明確區分「可讀而無效」與「不可讀」(單一來源,`src/WOrmLowdb.mjs` module 層,內部為 wsemi `chkReadable`,不得為站點另寫第二份);不可讀者**拋出固定詞彙之錯誤 `invalid <名稱>: must be a readable value`**(第 557 項起;原為原樣拋出取值時之錯誤),由站點所在之 `try`(寫入入口、`selectByPk`)走既有 `catch → 重設快取 → emitError → reject`,或由建構函式同步 throw(原失敗通道,不新增第二條);可讀而型別不符者(數字、字串等)探針不拋,仍依判斷函數判為無效,行為不變.
   1. **探針於判斷函數回 `false` 之後**: 判斷函數回 `true`(有效)者不探——有效資料之讀取次序與次數同修前(無額外讀取、零額外成本),且不致把「第 2 次讀取才拋錯」之值(判斷函數第 1 次讀取成功而有效,其後 `cloneDeep` 於 `try` 內拋錯 = 修前通道)因探針先讀一次而改判為早退(先探後判之次序以變異 P01 驗證會轉紅).
-  2. **探針之讀取範圍依站點種類(kind),各取該站點判斷函數於修前(wsemi 1.9.68)所讀取者,不多不少**(多讀會把修前可讀之值多判不可讀,少讀則漏掉修前拋錯者): `'str'`(`isestr` 站點: `opt.url/db/cl`、`pk`、`getErrMsg` 之 `message`;修前 `isstr` 為標籤式)——型別標籤(`Object.prototype.toString.call`,物件與函數皆讀),標籤為 `String` 者另讀 `length`;`'bol'`(`isbol` 站點: `opt.useCache/autoGenPk`、`option.returnList`;修前為 lodash `isBoolean`)——只讀 `typeof` 為 `'object'` 者(函數不讀): `Symbol.toStringTag` 之 `has`、有 tag 時其自有屬性描述子、型別標籤;`'data'`(`iseobj`/`isearr` 站點: 各寫入入口之 `data`)——型別標籤,標籤為 `[object Object]` 者做與 `iseobj` 相同之 `for…in` 加 `hasOwnProperty` 走訪(含原型鏈上之陷阱、只走字串鍵),標籤為 `[object Array]` 者讀 `length` 與 `length` 為 1 時之唯一元素(同 `isearr`);其他標籤(Date、Map、型別陣列等)只讀標籤、不展開(型別陣列之鍵為全部索引).不呼叫 getter(元素 getter 之呼叫除外,見已知限制).
+  2. **探針之讀取範圍依站點種類(kind),各取該站點判斷函數於修前(wsemi 1.9.68)所讀取者,不多不少**(多讀會把修前可讀之值多判不可讀,少讀則漏掉修前拋錯者): `'str'`(`isestr` 站點: `opt.url/db/cl`、`pk`、`getErrMsg` 之 `message`;修前 `isstr` 為標籤式)——型別標籤(`Object.prototype.toString.call`,物件與函數皆讀),標籤為 `String` 者另讀 `length`;`'bol'`(`isbol` 站點: `opt.useCache/autoGenPk`、`option.returnList`;修前為 lodash `isBoolean`)——只讀 `typeof` 為 `'object'` 者(函數不讀): `Symbol.toStringTag` 之 `has`、有 tag 時其自有屬性描述子、型別標籤;`'data'`(`iseobj`/`isearr` 站點: 各寫入入口之 `data`)——型別標籤,標籤為 `[object Object]` 者做與 `iseobj` 相同之 `for…in` 加 `hasOwnProperty` 走訪(含原型鏈上之陷阱、只走字串鍵;**此為修前〔本地探針〕之範圍,現行以 `chkReadable` 為準,wsemi 1.9.79 起並讀 Symbol 鍵,見〈第 557 項修訂〉差異⑤**),標籤為 `[object Array]` 者讀 `length` 與 `length` 為 1 時之唯一元素(同 `isearr`);其他標籤(Date、Map、型別陣列等)只讀標籤、不展開(型別陣列之鍵為全部索引).不呼叫 getter(元素 getter 之呼叫除外,見已知限制).
   3. 順序: `insert` 先讀 `option.returnList`(判斷函數回 `false` 才探)再判 `data`(同規則 5 之讀取順序);探針於 `cloneDeep` 之前,故事件之 `data` 引數為呼叫端原物件(同規則 4).
   4. 訊息為拋出者之原訊息(規則 2),已撤銷之 Proxy 之訊息文字隨站點種類之第一個讀取而定(與修前同: `bol` 站點為 `has`,`str` 與 `data` 站點為 `Object.prototype.toString`).
   5. 元素索引 ≥ 1 與巢狀值之 getter 拋錯不在探針範圍: 由其後之 `cloneDeep`(`try` 內)讀取,與修前同通道(對照案 `array whose [1] getter throws`;`[1]` 之讀取次數對照案確保探針不多讀).
@@ -120,7 +120,7 @@
   3. 其餘同原規則 7: 檢核於判斷函數回 `false` 之後(不多讀有效值,不把「第 2 次讀取才拋錯」之值改判為早退);通道為既有 `catch → 重設快取 → emitError → reject`;可讀而型別不符者行為不變;資料內巢狀值與元素索引 ≥ 1 由其後之 `cloneDeep` 於 `try` 內讀取,原定拋錯者維持**拋出者之原訊息**(非判斷函數站點,不屬固定詞彙範圍)——**此條已由規則 8(第 557 項對齊輪,oro557a2)取代: 複製處拋錯者一律轉固定詞彙 `invalid data: must be a readable value`、`error` 事件之 `data` 為 `null`**.
 - 站點全集(行號為 2026-11-20 現況;`assertReadable` 8 站 + `assertReadableData` 4 站 = 12,與原 12 站一一對應): `opt.url` `:181`、`opt.db` `:191`、`opt.cl` `:201`、`opt.useCache` `:211`、`opt.autoGenPk` `:219`、`getErrMsg` `:480`、`selectByPkCore` `:705`、`insertCore` 之 `option.returnList` `:778` 與 `data` `:785`、`insertBulkCore` `:923`、`saveCore` `:1035`、`delCore` `:1256`.
 - 盤點指令: Grep `src/WOrmLowdb.mjs` 搜 `assertReadable\(|assertReadableData\(|probeReadable`.預期: `probeReadable` 0 處;`assertReadable(` 定義 1(`:60`)+ 站點 8 + `assertReadableData` 內 1(`:81`);`assertReadableData(` 定義 1(`:73`)+ 站點 4;每處站點皆位於其判斷函數之 `if (!is…(…)) {` 分支內第一句.再 Grep `\b(isarr|isbol|isestr|iseobj|isearr|haskey)\(`: **新增判斷函數站點而其判定對象為呼叫端給的值者,須於其回 `false` 之分支先檢核**(原 27 處之分類不變,惟 `procPk` 之兩處 `isestr(v.id)` 已改 `isNoPk`,見 R-PKGIVEN-01).
-- 與 1.0.68(olw492i,本地探針)之行為差異(皆依 `chkReadable` 之文件化讀取範圍,規則二.4 對照 `chkReadable(v)` = 標籤): ① 訊息: 原「原樣拋出取值時之錯誤」→ 固定詞彙(`unit-write-pre-error` 之 3 種 `data` 壞輸入 × 4 入口、`unit-readable-probe` 各站點);② 布林站點(`opt.useCache`/`autoGenPk`、`option.returnList`): `has` 陷阱拋錯之 Proxy、自有 `Symbol.toStringTag` 之描述子讀取拋錯之 Proxy 由「不可讀」→「可讀而型別不符(用預設)」(現行 `isbol` 為 `typeof`,不讀);已撤銷之函數 Proxy 由「讀不到(用預設)」→「不可讀」(`chkReadable` 對函數亦讀標籤);③ 字串站點(`opt.url/db/cl`、`pk`、`err.message`): 標籤為 `String` 而 `length` 拋錯之物件由「不可讀」→「可讀而型別不符」;④ 資料站點: 空陣列 Proxy 其 `getOwnPropertyDescriptor` 陷阱於讀取 `length` 時拋錯者由「早退」→「不可讀」(`elements:'first'` 以描述子讀 `length` 與唯一元素;修前探針只讀值);標籤非 `[object Object]` 者(`Map`、`Date`、型別陣列、陣列等)之 `ownKeys` 不讀,與修前同(測試以 `ownKeys` 陷阱計次為 0 證明).
+- 與 1.0.68(olw492i,本地探針)之行為差異(皆依 `chkReadable` 之文件化讀取範圍,規則二.4 對照 `chkReadable(v)` = 標籤): ① 訊息: 原「原樣拋出取值時之錯誤」→ 固定詞彙(`unit-write-pre-error` 之 3 種 `data` 壞輸入 × 4 入口、`unit-readable-probe` 各站點);② 布林站點(`opt.useCache`/`autoGenPk`、`option.returnList`): `has` 陷阱拋錯之 Proxy、自有 `Symbol.toStringTag` 之描述子讀取拋錯之 Proxy 由「不可讀」→「可讀而型別不符(用預設)」(現行 `isbol` 為 `typeof`,不讀);已撤銷之函數 Proxy 由「讀不到(用預設)」→「不可讀」(`chkReadable` 對函數亦讀標籤);③ 字串站點(`opt.url/db/cl`、`pk`、`err.message`): 標籤為 `String` 而 `length` 拋錯之物件由「不可讀」→「可讀而型別不符」;④ 資料站點: 空陣列 Proxy 其 `getOwnPropertyDescriptor` 陷阱於讀取 `length` 時拋錯者由「早退」→「不可讀」(`elements:'first'` 以描述子讀 `length` 與唯一元素;修前探針只讀值);標籤非 `[object Object]` 者(`Map`、`Date`、型別陣列、陣列等)之 `ownKeys` 不讀,與修前同(測試以 `ownKeys` 陷阱計次為 0 證明);⑤ **資料站點之 `ownKeys` 自 wsemi 1.9.79(第 559 項⑤,第 492 項批 10 之下游連動,olw492k,2026-11-26)起一併讀 Symbol 鍵之描述子**(沿原型鏈對全部自有鍵〔字串與 Symbol〕做 `getOwnPropertyDescriptor`;`iseobj` 之 `for…in` 只走字串鍵,本規則「為 `iseobj` 讀取之超集」之超集範圍因此含 Symbol 鍵): 「只有 Symbol 鍵且其 `getOwnPropertyDescriptor` 陷阱拋錯之 Proxy」(`KINDS` 之 `Proxy with only a Symbol key whose descriptor read throws`)之 `data` 由「可讀而無效(早退,`insert`/`insertBulk` 回 `n: 0`、`save`/`del` 回 `[]`,不發事件)」改為「不可讀」——4 入口 5 呼叫形(`insert`、`insert(returnList:true)`、`insertBulk`、`save`、`del`)皆走既有失敗通道(實跑確認,入口一致: reject `invalid data: must be a readable value`、error 事件恰一次且先於 reject、事件 `data` 為 `null`、不發 `change`、資料庫不變、其後之 `insert` 照常);純量站點(`pk`、`option.returnList`、建構選項、`err.message`)只讀標籤,此值仍為可讀而型別不符,行為不變(測試之 `str`/`bol` 欄不變).`src/` 0 改動(`assertReadableData` 之選項本即 `ownKeys: true`,隨 `chkReadable` 之讀取範圍而變).測試之鑑別: 於鏡像根把 wsemi `chkReadable` 之描述子讀取改回略過 Symbol 鍵,新期望 5 案轉紅,改前之期望於該變異下為綠、於已安裝版本下為紅 5 案.
 - 測試: `test/unit-readable-probe.test.mjs`(329 案;`KINDS` 之 `str`/`bol`/`data`/`dfixed` 旗標手寫,依上列讀取範圍,不由被測函數產生;另 4 案以 `ownKeys` 陷阱計次證明非 Object 標籤不讀鍵)、`test/unit-write-pre-error.test.mjs`(133 案;3 種 `data` 壞輸入之訊息期望改固定詞彙)、`test/unit-diaglog-wire.test.mjs`(靜態盤點 `throw mkErr(` 6 → 9;規則 8 後再改為 `throw mkErr(` 6 與 `throw mkReadErr(` 6).單檔指令: `npx mocha --no-parallel test/unit-write-pre-error.test.mjs test/unit-readable-probe.test.mjs --timeout 180000`.
 - 已知限制: ① 標籤為 `[object Object]` 之 `data` 且可讀而無效(如 `{}`)時 `ownKeys` 仍沿原型鏈讀(與 `iseobj` 同範圍之超集,成本與一般物件之鍵數成正比);非 Object 標籤不讀(已回饋 wsemi: `chkReadable` 之 `ownKeys` 對大型型別陣列成本高,本庫以標籤先行規避);② `[0]` 之 getter 由呼叫端自讀(上列規則 1),索引 ≥ 1 與巢狀值之 getter 由 `cloneDeep` 讀;③ 資料內讀取即拋錯之 `id` 值(已撤銷之 Proxy、`Symbol.toStringTag`/`ownKeys` 拋錯者)於 `cloneDeep` 即拋出,原訊息為拋出者之原訊息(同 w-orm-mongodb 參考實作「S2 特例」),不補值、不寫入,見 R-PKGIVEN-01;④ `option` 與建構 `opt` 容器本身不可讀(已撤銷之 Proxy)者由 lodash `get` 讀鍵時拋出(非判斷函數站點),通道不變、原訊息為拋出者之原訊息;⑤ error 事件對不可讀之 `data` 傳呼叫端原物件(修前同;w-orm-mongodb 傳 `null`,全族比對待主控).**③④⑤ 已由規則 8(第 557 項全族對齊輪,2026-11-20 oro557a2;條款 A1/A3/A4)取代: ③ 複製處拋錯者轉 `invalid data: must be a readable value`;④ 容器不可讀轉 `invalid option: …`/`invalid opt: …`;⑤ 入口階段拒絕之 error 事件 `data` 為 `null`.**
 
@@ -183,8 +183,8 @@
 
 ## R-ORMSTR-01 字串良構:主鍵、寫入資料、opt 不得含孤立代理字元(主鍵並不得含 NUL)
 
-- 狀態: 已套(2026-10-20,第 66 項批 1c,以 w-orm-lmdb 為範本).依據: dspec `C:\opensrcOper\dspec\w-orm系列條件語法支援盤點.md`〈一之三〉9.(使用者裁示 D1 全系列一律拒收含能保真之 lowdb/level、D2、D4;主控裁示 D3、D5–D8);審計 `C:\opensrcOper\dnow\20261020172106\agent-out\run01-系列審計回應.md` §5.2、§6.2(1c 列);wsemi 帳本 R-ORMSTR-01(wsemi ≥ 1.9.24);批 1 共通要求;建議檔 `建議w-orm-lowdb修正.md`;報告 `C:\opensrcOper\dnow\20261020172106\agent-out\批1-lmdb-level-lowdb-修正報告.md`.
-- 重現用工具腳本(修前紅 `run-pre.mjs <src檔> <repo根>`、變異 `mutate-generic.mjs <repo根> lowdb`、`analyze.mjs`)本機 `./tmp/` 已於結案時清除,備份於 `C:\opensrcOper\dnow\20261020172106\agent-out\批1-evidence\lmdb\tools\`(lowdb 之變異結果與修前紅清單於 `…\批1-evidence\lowdb\`).
+- 狀態: 已套(2026-10-20,第 66 項批 1c,以 w-orm-lmdb 為範本).依據: dspec `dspec/w-orm系列條件語法支援盤點.md`〈一之三〉9.(使用者裁示 D1 全系列一律拒收含能保真之 lowdb/level、D2、D4;主控裁示 D3、D5–D8);審計 `主控任務 20261020172106 之run01-系列審計回應.md` §5.2、§6.2(1c 列);wsemi 帳本 R-ORMSTR-01(wsemi ≥ 1.9.24);批 1 共通要求;建議檔 `建議w-orm-lowdb修正.md`;報告 `主控任務 20261020172106 之批1-lmdb-level-lowdb-修正報告.md`.
+- 重現用工具腳本(修前紅 `run-pre.mjs <src檔> <repo根>`、變異 `mutate-generic.mjs <repo根> lowdb`、`analyze.mjs`)本機 `./tmp/` 已於結案時清除,備份於 `主控任務 20261020172106 之批1-evidence/lmdb/tools/`(lowdb 之變異結果與修前紅清單於 `…\批1-evidence\lowdb\`).
 - **性質**: lowdb 以 JSON 檔存放,孤立代理字元(`\ud800` 轉義)於鍵、值、比較三者皆**保真、無碰撞**(審計: 碰撞 0,全系列唯一能完整保真者),故本批**不修缺陷,價值在系列一致**(同一應用經 w-serv-orm 換後端時,資料行為不因後端而異;條件側 `cvOrmFind` 本即不分能力一律拒收孤立代理,使保真之值亦無法以條件查詢);行為變更為「原照存者現拒收」.
 - 單一擁有者: wsemi `chkOrmStr`、`chkOrmData`、案例表 `_cvOrmStrCases`;本套件接線(行號 2026-10-20,以函數名 Grep 定位): `chkOptStr`(建構,`:85`;`url` 為檔案路徑,`db`/`cl` 為 JSON 內之鍵 `<db>:<cl>`,三者一律檢)、`chkPk`(`:395`)、`getWellFormedMsg`(`:409`)、`procWellFormed`(`:422`)、`selectByPkCore`(`:575`)、`insertCore`(`:673`)、`insertBulkCore`(`:804`)、`saveCore` 之 `msgs`(`:914`)與合併路徑 `vIn`(`:957`)、`delCore`(`:1142`).
 - 規則: 與 w-orm-lmdb、w-orm-level 同(範圍、處置、訊息、去回顯、批次索引、不隨 `autoGenPk`、順序 `procPk` → `chkDataDate` → `procWellFormed`、`isClosed` 先於一切)；本套件差異:
@@ -202,9 +202,9 @@
 
 ## R-PKMAP-01 主鍵存在性之對照表: 以 Map 判定,不得以一般物件加 `in`(含 wsemi `haskey`)
 
-- 狀態: 已套(2026-10-21,第 66 項批 1c run02〔任務⑦〕;來源: 批 1b 報告 §6 之範圍外觀察與主控複審;比照 w-orm-lmdb 2026-10-12 之 R-DELALL-01 規則 2「不得以一般物件加 `in`(含 wsemi `haskey`)判定」;報告 `C:\opensrcOper\dnow\20261020172106\agent-out\批1-level-lowdb-run02-修正報告.md`).與 w-orm-level 同一規則.
+- 狀態: 已套(2026-10-21,第 66 項批 1c run02〔任務⑦〕;來源: 批 1b 報告 §6 之範圍外觀察與主控複審;比照 w-orm-lmdb 2026-10-12 之 R-DELALL-01 規則 2「不得以一般物件加 `in`(含 wsemi `haskey`)判定」;報告 `主控任務 20261020172106 之批1-level-lowdb-run02-修正報告.md`).與 w-orm-level 同一規則.
 - 成因: 修前 `getKpPk` 回傳一般物件 `kp = {}`([主鍵 → `{k, v}`]),`insertCore`/`insertBulkCore` 以 `haskey(kp, id)`(即 `id in kp`)、`saveCore`/`delCore`/`selectByPkCore` 以 `get(kp, id, null)` 判定主鍵是否已存在,並以 `kp[id] = …`、`delete kp[id]` 存取.`in` 與 lodash `get` 走原型鏈,主鍵為 `Object.prototype` 之成員名(`constructor`、`toString`、`valueOf`、`hasOwnProperty`、`isPrototypeOf`、`propertyIsEnumerable`、`toLocaleString`、`__proto__`、`__defineGetter__`、`__defineSetter__`、`__lookupGetter__`、`__lookupSetter__`,共 12 個)時: `insert` 回 `{n:1,nInserted:0,ok:1}` 而**靜默不寫入**(`returnList` 之該筆亦 `nInserted:0`)、`insertBulk` 誤報 `can not insertBulk by existed id[…]`;`save`、`del`、`selectByPk` 之 `get(kp, id, null)` 搭 `iseobj(r)` 對缺席之原型成員名恰回非物件(函數、空原型物件),故修前此三處對 12 名單獨使用尚正確.另 `kp['__proto__'] = {k, v}` 不建立自有屬性而是**改寫 `kp` 之原型**為 `{k, v}`,使主鍵 `k`、`v` 被判為已存在(`get(kp, 'v')` 取到該列之紀錄): `__proto__` 列(以 `save` 建立)存在時,修前探針 `tmp/probe-kv-contam.mjs` 對動工前 src 實測: `selectByPk('v')` 回 `2`(應為 `null`)、`del({id:'v'})` 回 `{n:1,nDeleted:1}` 而實未刪除任何列、`save({id:'v'})` 回 `nInserted:0,nModified:1`(實為新增).
-- 重現用工具腳本(修前探針 `tmp/probe-proto-id.mjs`、`tmp/probe-kv-contam.mjs`、變異 `tmp/mutate-protokey.mjs`〔位於 level 之 `tmp/`〕)本機 `./tmp/` 已於結案時清除,備份於 `C:\opensrcOper\dnow\20261020172106\agent-out\批1-evidence\run02\tools\`(探針全文輸出於 `…\logs\`).
+- 重現用工具腳本(修前探針 `tmp/probe-proto-id.mjs`、`tmp/probe-kv-contam.mjs`、變異 `tmp/mutate-protokey.mjs`〔位於 level 之 `tmp/`〕)本機 `./tmp/` 已於結案時清除,備份於 `主控任務 20261020172106 之批1-evidence/run02/tools/`(探針全文輸出於 `…\logs\`).
 - 單一擁有者: `getKpPk`(建構對照表之唯一處,回傳 `Map`).
 - 規則:
   1. **對照表為 `Map`**: `getKpPk` 回傳 `new Map()`,鍵為主鍵字串(`id` 恆為字串;僅收錄 `isestr(id)` 者),值為 `{ k, v }`(`k` 為所在索引),存取一律 `has`/`get`/`set`/`delete`;使用端字串為鍵之容器**不得**用一般物件加 `in`、`haskey`、`kp[id]`、`get(kp, id)`、`delete kp[id]`.
@@ -213,7 +213,7 @@
 - 盤點指令: Grep `src/WOrmLowdb.mjs` 搜 `haskey\(|kp\[|get\(kp|delete kp|\bkp = \{\}`.預期只剩 3 處 `haskey(`(皆為刻意不套,見下): `haskey(kpGqueue, gkey)`(`:148`)、`haskey(lowdb.data, key)`(`:435`)、`haskey(kpDel, k)`(`:1212`);`kp[`、`get(kp`、`delete kp`、`kp = {}` 為 0;再搜 `getKpPk\(|kp\.(has|get|set|delete)\(`.預期: `getKpPk(` 定義 1 + 呼叫 5(`selectByPkCore`、`insertCore`、`insertBulkCore`、`saveCore`、`delCore`)、`kp.has(` 2(`insertCore`、`insertBulkCore`)、`kp.get(` 3(`selectByPkCore`、`saveCore`、`delCore`)、`kp.set(` 5(`getKpPk` 1、`insertCore` 1、`insertBulkCore` 1、`saveCore` 2)、`kp.delete(` 1(`delCore`).
 - 站點全集與判準: ① `getKpPk`(`new Map()`,已套);② `selectByPkCore` 之 `kp.get`(已套);③ `insertCore` 之 `kp.has`/`kp.set`(已套);④ `insertBulkCore` 之 `kp.has`/`kp.set`(已套);⑤ `saveCore` 之 `kp.get`/`kp.set`×2(已套);⑥ `delCore` 之 `kp.get`/`kp.delete`(已套);⑦ **刻意不套** `kpGqueue`(模組層佇列表,`haskey(kpGqueue, gkey)`): 鍵為 `path.resolve(url)` 之絕對路徑,恆以磁碟機代號或 `/` 起首,不可能等於原型成員名;⑧ **刻意不套** `readData` 之 `haskey(lowdb.data, key)`: 鍵為 `` `${db}:${cl}` ``,恆含 `:`,不可能等於原型成員名(`db`、`cl`、`url` 為原型成員名之對照案例見測試);⑨ **刻意不套** `delCore` 之 `kpDel`(`kpDel[r.k] = true`、`haskey(kpDel, k)`): 鍵為陣列索引(數字),非使用端字串;⑩ `select`/`delAll`: 不接受主鍵對照(不適用).
 - 軸(測試輸入空間): id 12 個原型成員名 + 7 個對照組(`prototype`、`length`、`toJSON`、`then`、`__proto`、`proto__`、`id`)= 19 × 12 個 `it`(`insert` 新增與重複、`insert` returnList、`insertBulk` 新增/重複/同批重複、`insertBulk` 與一般主鍵同批、`save` 新增(含 `insert` 事件)、`save` 合併與等值(`nModified`)、`save` `autoInsert:false` 未命中與命中、`save` 同批同主鍵、`del` 存在/重複、`del` 不存在(他列不受影響)、`del` 同批重複、`selectByPk` 未命中與命中)+ 12 名同批 × {`insert`、`insertBulk`、`save`、`del`} + `__proto__` 列之欄位名交叉污染 {`insert`、`insertBulk`、`save`、`del`(2 組)、`selectByPk`/`save`/`del` 對欄位名 `name`、`k`、`v`(`k`、`v` 為本套件對照表值 `{k, v}` 之欄位名,修前 `kp['__proto__'] = {k, v}` 使其繼承為「已存在」)} + 位址名稱(`db`/`cl`/檔名為原型成員名)對照 2 + 成員名全集 1.
-- 測試: `test/unit-protokey.test.mjs`(242 案 = 228〔19 id × 12〕+ 12 名同批 4 + 交叉污染 7 + 位址名稱 2 + 成員名全集 1).單檔指令: `npx mocha --no-parallel test/unit-protokey.test.mjs --timeout 180000`.測試主體與 w-orm-level 之同名檔相同(差異僅 `mk`、`closeWo`、`before`/`after`;本檔由 level 版之 `tmp/gen-lowdb-protokey.mjs` 產生,腳本結案備份於 `C:\opensrcOper\dnow\20261020172106\agent-out\批1-evidence\run02\`).
+- 測試: `test/unit-protokey.test.mjs`(242 案 = 228〔19 id × 12〕+ 12 名同批 4 + 交叉污染 7 + 位址名稱 2 + 成員名全集 1).單檔指令: `npx mocha --no-parallel test/unit-protokey.test.mjs --timeout 180000`.測試主體與 w-orm-level 之同名檔相同(差異僅 `mk`、`closeWo`、`before`/`after`;本檔由 level 版之 `tmp/gen-lowdb-protokey.mjs` 產生,腳本結案備份於 `主控任務 20261020172106 之批1-evidence/run02/`).
 - 修前紅(對 `tmp/pre/src/WOrmLowdb.mjs`,即本次動工前之工作樹 src 副本,搭最終測試): 242 案中**紅 106、綠 136**(綠者 = 對照組 7 id × 12 = 84 + 成員名全集 1 + 位址名稱 2 + 原型成員名各案中修前碰巧相同者 49,如 `save` 新增〔`get(kp, id, null)` + `iseobj` 對缺席之原型成員名恰回假,故修前 `save` 新增即正確〕);對照組 0 案紅.修前探針 `tmp/probe-proto-id.mjs` 重現: 全部 12 名 `insert` 回 `nInserted:0` 而不寫入、`insertBulk` 報 `existed id[X]`.
 - 變異(`tmp/mutate-protokey.mjs <repo根> WOrmLowdb.mjs`,9 項 + 基準 M00,皆於副本 `tmp/mut-pk/<名>/{src,test}`,以賦值語意重建一般物件〔含 `__proto__` 改寫原型〕之輔助 `inKp`/`getKpObj`/`ObjKp` 還原修前語意,`--bail`): D01 `insertCore` 改 `in`、D02 `insertBulkCore` 改 `in`、D03 `saveCore` 之 `get` 改回物件取值、D04 `delCore` 之 `get` 改回物件取值、D05 `selectByPkCore` 之 `get` 改回物件取值、D06 `getKpPk` 改回一般物件(整體還原)、D07 `delCore` 不 `delete`、D08 `insertBulkCore` 不 `set`、D09 `saveCore` 新增路徑不 `set`,**9/9 全數轉紅**(基準全綠 242).**初版 3 項(D03–D05,`get` 站點)存活**: 原有 `get` 對缺席之原型成員名恰回非物件,故僅 `__proto__` 列存在時之對照表原型污染才可觀測;補「`__proto__` 列之欄位名 `name`、`k`、`v` 不為主鍵」之 `selectByPk`/`save`/`del` 三案後全數轉紅.
 - 已知限制: ① 只處理以使用端字串為鍵之對照表;資料欄位名為 `__proto__` 者(數據內容,非主鍵)之處置在 lodash `merge`/`cloneDeep`,不在本規則;② 資料庫檔內既有資料不需遷移.
@@ -221,7 +221,7 @@
 
 ## R-DIAG-01 診斷輸出與對外錯誤值之遮罩:依 dspec〈診斷輸出與遮罩〉,實作與規則在 wsemi
 
-- 狀態: 已套(2026-10-29,排程第 161 項 mig-lowdb;取代 2026-10-28 第 153 項之自製 `src/getDiag.mjs`,該檔已刪).依據: 跨套件規格 `C:\opensrcOper\dspec\診斷輸出與遮罩.md`(原則 D1～D5、裁定 Q1～Q4、P1～P9、§5 已知限制)與設計 `C:\opensrcOper\dnow\20261029002013\agent-out\diag-run01-設計.md` §4.1、§6、§6.10;wsemi ≥ 1.9.31 帳本 `sgud/rule/rulebook_diag.md` R-DIAG-01(**單一擁有者**,唯讀參考).報告 `C:\opensrcOper\dnow\20261029002013\agent-out\mig-lowdb-修正報告.md`.
+- 狀態: 已套(2026-10-29,排程第 161 項 mig-lowdb;取代 2026-10-28 第 153 項之自製 `src/getDiag.mjs`,該檔已刪).依據: 跨套件規格 `dspec/診斷輸出與遮罩.md`(原則 D1～D5、裁定 Q1～Q4、P1～P9、§5 已知限制)與設計 `主控任務 20261029002013 之diag-run01-設計.md` §4.1、§6、§6.10;wsemi ≥ 1.9.31 帳本 `sgud/rule/rulebook_diag.md` R-DIAG-01(**單一擁有者**,唯讀參考).報告 `主控任務 20261029002013 之mig-lowdb-修正報告.md`.
 - **本套件不得另寫等價實作、不得自行補遮罩邏輯**(D1):遮罩、摘要、診斷出口一律用 wsemi 之 `getDiag`/`getDiagSecrets`(及其 `diag.err`、`diag.mask`、`diag.brief`);發現 wsemi 缺陷依全域設定 §5.2 寫建議檔交主控,不在本套件繞道.
 - 本套件之宣告與呼叫(`src/WOrmLowdb.mjs`;行號為 2026-10-29 現況):
   1. 宣告(`:186`): `diag = getDiag(opt, { secrets: getDiagSecrets({ paths: [url, gkey, path.normalize(url), tmpOf(url), tmpOf(gkey)] }), safeKeys: ['mode'] })`.儲存路徑(`opt.url` 原值、絕對路徑、normalize 後、lowdb 底層 steno 寫檔暫存檔 `<目錄>/.<檔名>.tmp` 相對與絕對)以 `paths` 宣告,**只入 detail 清單**(診斷輸出遮;對外錯誤值不遮,Q3);無 `urls/username/password/values`、無 `codes/types/nested/patterns`.`opt.logDetail`、`opt.funLog` 由 `getDiag` 建構時自讀快照.
@@ -279,7 +279,7 @@
 
 ## 〔條件(find)之支援範圍〕(主控 2026-10-16 依使用者交辦寫入;2026-10-17 白名單實作後更新)
 
-- 系列盤點與處置原則:`C:\opensrcOper\dspec\w-orm系列條件語法支援盤點.md`.
+- 系列盤點與處置原則:`dspec/w-orm系列條件語法支援盤點.md`.
 - 轉譯路徑(2026-10-17 起):入口先經 wsemi `cvOrmFind` 檢核(R-FIND-01)並把複本內 Date 轉 ISO 字串,select 以 mingo 7.2.4 之 `new Query(複本).find(...)`、delAll 以同一複本之 `q.test(dt)` 逐筆判定(同一引擎、同一條件複本).
 - 支援範圍(2026-10-17 起):**系列條件白名單**(〈系列條件白名單〉;細節與上限見 wsemi `cvOrmFind` 與規格 T11)——頂層未給/`undefined`/`{}` 為全部、欄位等值(純量)、`$eq $ne $gt $gte $lt $lte`、`$in $nin`、文件層 `$and $or`;mingo 運算子全集自此**不再支援**(原支援範圍見〈破壞性變更紀錄〉).
 - 不支援之處置:白名單外者由 `cvOrmFind` 於入口整批 reject(`invalid find: <原因> at [<路徑>]`),不再仰賴 mingo 之 `unknown query operator`.
@@ -293,11 +293,11 @@
 
 - **`delAll()` 不給條件就是全刪;給條件才是部分刪除.**「不給條件」指:未傳 find、傳 `undefined`、或傳空物件 `{}`——三者皆為全部(select 亦同).
 - **傳了值但不是條件物件者一律 reject**(使用者裁示 B):`null`、陣列、字串、數值、布林、函數、Date、RegExp、Map、Set、類別實例等,以整批性錯誤 reject,不得視同 `{}` 而全刪.適用於所有接受 find 之函數.
-- 規格出處:`C:\opensrcOper\dspec\w-orm系列條件語法支援盤點.md` 〈一之一〉.本條已於 2026-10-17 實作(R-FIND-01).
+- 規格出處:`dspec/w-orm系列條件語法支援盤點.md` 〈一之一〉.本條已於 2026-10-17 實作(R-FIND-01).
 
 ## 〔系列條件白名單〕(使用者 2026-10-17 裁示;主控寫入)
 
-- 全文與定案細節在 `C:\opensrcOper\dspec\w-orm系列條件語法支援盤點.md`〈一之三〉;本節為摘要,兩者不一致時以 dspec 為準.
+- 全文與定案細節在 `dspec/w-orm系列條件語法支援盤點.md`〈一之三〉;本節為摘要,兩者不一致時以 dspec 為準.
 - **只支援白名單,其他一律不支援(reject,整批性錯誤,不得靜默忽略)**:
   1. 頂層:未給、`undefined`、`{}` 為全部;其餘須為條件物件,否則 reject(〈delAll 與 find 之頂層語意〉).
   2. 欄位直接等值 `{欄: 純量}`,多欄隱含 AND.
